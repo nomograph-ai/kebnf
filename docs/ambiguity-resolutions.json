@@ -1,0 +1,331 @@
+{
+  "$schema": "ambiguity-resolution-schema.json",
+  "version": "0.1.0",
+  "generated": "2026-02-10",
+  "description": "Machine-readable registry of ambiguity resolutions in KEBNF-to-tree-sitter conversion",
+  "categories": {
+    "definition_usage_pairs": {
+      "description": "Same keyword prefix, distinguished by 'def' keyword",
+      "mechanism": "glr_conflict_array",
+      "rationale": "Inherent to SysML v2 language design; GLR handles efficiently"
+    },
+    "empty_string_rules": {
+      "description": "Rules that match empty strings by KEBNF design",
+      "mechanism": "rule_replacement",
+      "rationale": "Tree-sitter rejects empty-matching rules; replacement preserves behavior"
+    },
+    "syntactically_identical": {
+      "description": "Different semantic types with identical syntax",
+      "mechanism": "rule_merge",
+      "rationale": "Syntax trees don't distinguish; semantic analysis uses context"
+    },
+    "context_sensitive_bodies": {
+      "description": "Member types valid in multiple body contexts",
+      "mechanism": "unified_rule",
+      "rationale": "Context sensitivity is semantic, not syntactic"
+    },
+    "expression_ambiguities": {
+      "description": "Feature chains vs qualified names",
+      "mechanism": "precedence",
+      "rationale": "Standard expression parsing technique"
+    }
+  },
+  "resolutions": [
+    {
+      "id": "def-usage-001",
+      "category": "definition_usage_pairs",
+      "rule_a": "AttributeDefinition",
+      "rule_b": "AttributeUsage",
+      "shared_prefix": "attribute",
+      "status": "implemented",
+      "implementation": {
+        "file": "src/emitter.rs",
+        "function": "detect_conflicts"
+      }
+    },
+    {
+      "id": "def-usage-002",
+      "category": "definition_usage_pairs",
+      "rule_a": "EnumerationDefinition",
+      "rule_b": "EnumerationUsage",
+      "shared_prefix": "enumeration",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-003",
+      "category": "definition_usage_pairs",
+      "rule_a": "OccurrenceDefinition",
+      "rule_b": "OccurrenceUsage",
+      "shared_prefix": "occurrence",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-004",
+      "category": "definition_usage_pairs",
+      "rule_a": "IndividualDefinition",
+      "rule_b": "IndividualUsage",
+      "shared_prefix": "individual",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-005",
+      "category": "definition_usage_pairs",
+      "rule_a": "ItemDefinition",
+      "rule_b": "ItemUsage",
+      "shared_prefix": "item",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-006",
+      "category": "definition_usage_pairs",
+      "rule_a": "PartDefinition",
+      "rule_b": "PartUsage",
+      "shared_prefix": "part",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-007",
+      "category": "definition_usage_pairs",
+      "rule_a": "PortDefinition",
+      "rule_b": "PortUsage",
+      "shared_prefix": "port",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-008",
+      "category": "definition_usage_pairs",
+      "rule_a": "ConnectionDefinition",
+      "rule_b": "ConnectionUsage",
+      "shared_prefix": "connection",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-009",
+      "category": "definition_usage_pairs",
+      "rule_a": "InterfaceDefinition",
+      "rule_b": "InterfaceUsage",
+      "shared_prefix": "interface",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-010",
+      "category": "definition_usage_pairs",
+      "rule_a": "AllocationDefinition",
+      "rule_b": "AllocationUsage",
+      "shared_prefix": "allocation",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-011",
+      "category": "definition_usage_pairs",
+      "rule_a": "FlowDefinition",
+      "rule_b": "FlowUsage",
+      "shared_prefix": "flow",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-012",
+      "category": "definition_usage_pairs",
+      "rule_a": "ActionDefinition",
+      "rule_b": "ActionUsage",
+      "shared_prefix": "action",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-013",
+      "category": "definition_usage_pairs",
+      "rule_a": "StateDefinition",
+      "rule_b": "StateUsage",
+      "shared_prefix": "state",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-014",
+      "category": "definition_usage_pairs",
+      "rule_a": "CalculationDefinition",
+      "rule_b": "CalculationUsage",
+      "shared_prefix": "calc",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-015",
+      "category": "definition_usage_pairs",
+      "rule_a": "ConstraintDefinition",
+      "rule_b": "ConstraintUsage",
+      "shared_prefix": "constraint",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-016",
+      "category": "definition_usage_pairs",
+      "rule_a": "RequirementDefinition",
+      "rule_b": "RequirementUsage",
+      "shared_prefix": "requirement",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-017",
+      "category": "definition_usage_pairs",
+      "rule_a": "ConcernDefinition",
+      "rule_b": "ConcernUsage",
+      "shared_prefix": "concern",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-018",
+      "category": "definition_usage_pairs",
+      "rule_a": "CaseDefinition",
+      "rule_b": "CaseUsage",
+      "shared_prefix": "case",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-019",
+      "category": "definition_usage_pairs",
+      "rule_a": "AnalysisCaseDefinition",
+      "rule_b": "AnalysisCaseUsage",
+      "shared_prefix": "analysis",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-020",
+      "category": "definition_usage_pairs",
+      "rule_a": "VerificationCaseDefinition",
+      "rule_b": "VerificationCaseUsage",
+      "shared_prefix": "verification",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-021",
+      "category": "definition_usage_pairs",
+      "rule_a": "UseCaseDefinition",
+      "rule_b": "UseCaseUsage",
+      "shared_prefix": "use case",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-022",
+      "category": "definition_usage_pairs",
+      "rule_a": "ViewDefinition",
+      "rule_b": "ViewUsage",
+      "shared_prefix": "view",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-023",
+      "category": "definition_usage_pairs",
+      "rule_a": "ViewpointDefinition",
+      "rule_b": "ViewpointUsage",
+      "shared_prefix": "viewpoint",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-024",
+      "category": "definition_usage_pairs",
+      "rule_a": "RenderingDefinition",
+      "rule_b": "RenderingUsage",
+      "shared_prefix": "rendering",
+      "status": "implemented"
+    },
+    {
+      "id": "def-usage-025",
+      "category": "definition_usage_pairs",
+      "rule_a": "MetadataDefinition",
+      "rule_b": "MetadataUsage",
+      "shared_prefix": "metadata",
+      "status": "implemented"
+    },
+    {
+      "id": "empty-001",
+      "category": "empty_string_rules",
+      "rule": "Identification",
+      "original": "('<' name '>')? name?",
+      "replacement": "choice(seq('<', name, '>', optional(name)), name)",
+      "status": "implemented",
+      "semantic_impact": "Anonymous elements require optional() at call sites"
+    },
+    {
+      "id": "empty-002",
+      "category": "empty_string_rules",
+      "rule": "FeatureIdentification",
+      "original": "Same as Identification",
+      "replacement": "Same pattern",
+      "status": "implemented"
+    },
+    {
+      "id": "empty-003",
+      "category": "empty_string_rules",
+      "rule": "RootNamespace",
+      "original": "NamespaceBodyElement*",
+      "replacement": "repeat1(namespace_body_element)",
+      "status": "implemented",
+      "semantic_impact": "Empty files handled by source_file rule"
+    },
+    {
+      "id": "empty-004",
+      "category": "empty_string_rules",
+      "rule": "MemberPrefix",
+      "original": "visibility?",
+      "replacement": "visibility_indicator",
+      "status": "implemented",
+      "semantic_impact": "Visibility now required where member_prefix used"
+    },
+    {
+      "id": "empty-005",
+      "category": "empty_string_rules",
+      "rule": "TypePrefix",
+      "original": "'abstract'? metadata*",
+      "replacement": "choice(seq('abstract', repeat(...)), repeat1(...))",
+      "status": "implemented"
+    },
+    {
+      "id": "empty-006",
+      "category": "empty_string_rules",
+      "rule": "EmptyFeature",
+      "original": "{ }",
+      "replacement": "_empty_marker",
+      "status": "implemented",
+      "semantic_impact": "Uses placeholder token for semantic-only rules"
+    },
+    {
+      "id": "empty-007",
+      "category": "empty_string_rules",
+      "rule": "EmptyMultiplicity",
+      "original": "{ }",
+      "replacement": "_empty_marker",
+      "status": "implemented"
+    },
+    {
+      "id": "empty-008",
+      "category": "empty_string_rules",
+      "rule": "EmptyUsage",
+      "original": "{ }",
+      "replacement": "_empty_marker",
+      "status": "implemented"
+    },
+    {
+      "id": "empty-009",
+      "category": "empty_string_rules",
+      "rule": "EmptyActionUsage",
+      "original": "{ }",
+      "replacement": "_empty_marker",
+      "status": "implemented"
+    },
+    {
+      "id": "identical-001",
+      "category": "syntactically_identical",
+      "rule_a": "PrimaryArgumentMember",
+      "rule_b": "NonFeatureChainPrimaryArgumentMember",
+      "common_body": "ownedMemberParameter = PrimaryArgument",
+      "status": "pending",
+      "proposed_resolution": "Merge into single rule, document in mapping"
+    }
+  ],
+  "pending_analysis": [
+    {
+      "conflict": "namespace vs metadata_feature",
+      "source": "tree-sitter generate output",
+      "notes": "Requires investigation of rule structure"
+    }
+  ]
+}

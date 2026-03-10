@@ -1,0 +1,24 @@
+[package]
+name = "kebnf-to-tree-sitter"
+version = "0.1.0"
+edition = "2024"
+description = "Convert OMG KEBNF grammars to tree-sitter grammar.js files"
+license = "MIT"
+repository = "https://gitlab.com/nomograph/kebnf-to-tree-sitter"
+authors = ["Nomograph Labs"]
+keywords = ["sysml", "kebnf", "tree-sitter", "parser", "grammar"]
+categories = ["development-tools", "parsing"]
+
+[dependencies]
+ariadne = "0.4"
+chumsky = "1.0.0-alpha.7"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+reqwest = { version = "0.12", features = ["blocking"] }
+directories = "5"
+
+[dev-dependencies]
+insta = { version = "1", features = ["json"] }
+pretty_assertions = "1"

@@ -1,0 +1,27 @@
+// Simple test grammar
+
+Package = 'package' Identification? PackageBody
+
+Identification : Element =
+    ( '<' Name '>' )?
+    Name?
+
+PackageBody = ';' | '{' PackageBodyElement* '}'
+
+PackageBodyElement =
+    PartDefinition
+  | PartUsage
+
+PartDefinition =
+    isAbstract ?= 'abstract'
+    'part' 'def' Identification?
+
+PartUsage =
+    'part' Identification?
+    ownedRelationship += TypePart
+
+TypePart = ':' TypeName
+
+TypeName = Name
+
+Name = IDENTIFIER

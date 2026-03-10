@@ -1,0 +1,650 @@
+use crate::ast::*;
+use std::collections::{HashMap, HashSet};
+
+pub fn emit(rules: &[Rule], grammar_name: &str) -> Result<String, EmitError> {
+    let mut emitter = Emitter::new(grammar_name);
+    emitter.emit_grammar(rules)
+}
+
+pub fn find_identical_rules(rules: &[Rule]) -> Vec<IdenticalRuleGroup> {
+    let mut body_to_rules: HashMap<String, Vec<String>> = HashMap::new();
+
+    for rule in rules {
+        let normalized = normalize_body(&rule.body);
+        if !normalized.is_empty() {
+            body_to_rules
+                .entry(normalized)
+                .or_default()
+                .push(rule.name.clone());
+        }
+    }
+
+    body_to_rules
+        .into_iter()
+        .filter(|(_, names)| names.len() > 1)
+        .map(|(body, names)| IdenticalRuleGroup {
+            canonical: names[0].clone(),
+            aliases: names[1..].to_vec(),
+            normalized_body: body,
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone)]
+pub struct IdenticalRuleGroup {
+    pub canonical: String,
+    pub aliases: Vec<String>,
+    pub normalized_body: String,
+}
+
+fn normalize_body(body: &RuleBody) -> String {
+    match body {
+        RuleBody::Empty => String::new(),
+        RuleBody::Terminal(s) => format!("'{}'", s),
+        RuleBody::RuleRef(name) => name.clone(),
+        RuleBody::CrossRef(cr) => format!("[{}]", cr.rule_name),
+        RuleBody::Sequence(items) => {
+            let parts: Vec<_> = items
+                .iter()
+                .map(normalize_body)
+                .filter(|s| !s.is_empty())
+                .collect();
+            parts.join(" ")
+        }
+        RuleBody::Choice(items) => {
+            let parts: Vec<_> = items
+                .iter()
+                .map(normalize_body)
+                .filter(|s| !s.is_empty())
+                .collect();
+            parts.join(" | ")
+        }
+        RuleBody::Optional(inner) => {
+            let inner_str = normalize_body(inner);
+            if inner_str.is_empty() {
+                String::new()
+            } else {
+                format!("({})?", inner_str)
+            }
+        }
+        RuleBody::Repeat(inner) => {
+            let inner_str = normalize_body(inner);
+            if inner_str.is_empty() {
+                String::new()
+            } else {
+                format!("({})*", inner_str)
+            }
+        }
+        RuleBody::Repeat1(inner) => {
+            let inner_str = normalize_body(inner);
+            if inner_str.is_empty() {
+                String::new()
+            } else {
+                format!("({})+", inner_str)
+            }
+        }
+        RuleBody::Group(inner) => normalize_body(inner),
+        RuleBody::Assignment(a) => normalize_body(&a.value),
+        RuleBody::BooleanFlag(f) => format!("'{}'?", f.terminal),
+        RuleBody::SemanticAction(_) => String::new(),
+    }
+}
+
+#[derive(Debug)]
+pub struct EmitError {
+    pub message: String,
+}
+
+impl std::fmt::Display for EmitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for EmitError {}
+
+struct Emitter {
+    grammar_name: String,
+    indent: usize,
+    output: String,
+    rule_names: HashSet<String>,
+    undefined_refs: HashSet<String>,
+    canonical_rules: HashMap<String, String>,
+    merged_rules: Vec<IdenticalRuleGroup>,
+}
+
+impl Emitter {
+    fn new(grammar_name: &str) -> Self {
+        Self {
+            grammar_name: grammar_name.to_string(),
+            indent: 0,
+            output: String::new(),
+            rule_names: HashSet::new(),
+            undefined_refs: HashSet::new(),
+            canonical_rules: HashMap::new(),
+            merged_rules: Vec::new(),
+        }
+    }
+
+    fn emit_grammar(&mut self, rules: &[Rule]) -> Result<String, EmitError> {
+        for rule in rules {
+            self.rule_names.insert(rule.name.clone());
+        }
+
+        self.collect_undefined_refs(rules);
+
+        self.emit_header();
+        self.emit_line("");
+        self.emit_line("module.exports = grammar({");
+        self.indent += 1;
+
+        self.emit_line(&format!("name: '{}',", self.grammar_name));
+        self.emit_line("");
+        self.emit_line("extras: $ => [/\\s/, $.comment],");
+        self.emit_line("");
+
+        self.emit_conflicts(rules);
+
+        self.emit_line("rules: {");
+        self.indent += 1;
+
+        self.emit_source_file_rule(rules);
+
+        for rule in rules {
+            self.emit_rule(rule)?;
+        }
+
+        self.emit_stub_rules();
+        self.emit_builtin_rules();
+
+        self.indent -= 1;
+        self.emit_line("},");
+
+        self.indent -= 1;
+        self.emit_line("});");
+
+        Ok(self.output.clone())
+    }
+
+    fn collect_undefined_refs(&mut self, rules: &[Rule]) {
+        for rule in rules {
+            self.collect_refs_from_body(&rule.body);
+        }
+    }
+
+    fn collect_refs_from_body(&mut self, body: &RuleBody) {
+        match body {
+            RuleBody::RuleRef(name) => {
+                if !self.rule_names.contains(name) {
+                    self.undefined_refs.insert(name.clone());
+                }
+            }
+            RuleBody::CrossRef(cross_ref) => {
+                if !self.rule_names.contains(&cross_ref.rule_name) {
+                    self.undefined_refs.insert(cross_ref.rule_name.clone());
+                }
+            }
+            RuleBody::Sequence(items) | RuleBody::Choice(items) => {
+                for item in items {
+                    self.collect_refs_from_body(item);
+                }
+            }
+            RuleBody::Optional(inner)
+            | RuleBody::Repeat(inner)
+            | RuleBody::Repeat1(inner)
+            | RuleBody::Group(inner) => {
+                self.collect_refs_from_body(inner);
+            }
+            RuleBody::Assignment(assignment) => {
+                self.collect_refs_from_body(&assignment.value);
+            }
+            _ => {}
+        }
+    }
+
+    fn emit_stub_rules(&mut self) {
+        if self.undefined_refs.is_empty() {
+            return;
+        }
+
+        self.emit_line("// Stub rules for undefined references in KEBNF spec");
+        let mut refs: Vec<_> = self.undefined_refs.iter().cloned().collect();
+        refs.sort();
+        for name in refs {
+            let snake = to_snake_case(&name);
+            self.emit_line(&format!(
+                "{}: $ => /[a-zA-Z_][a-zA-Z0-9_]*/, // STUB: {} not defined in spec",
+                snake, name
+            ));
+            self.emit_line("");
+        }
+    }
+
+    fn emit_header(&mut self) {
+        self.emit_line("/// <reference types=\"tree-sitter-cli/dsl\" />");
+        self.emit_line("// @ts-check");
+        self.emit_line("");
+        self.emit_line("/**");
+        self.emit_line(" * Tree-sitter grammar generated from KEBNF specification.");
+        self.emit_line(" * ");
+        self.emit_line(" * Generated by kebnf-to-tree-sitter");
+        self.emit_line(" * https://gitlab.com/nomograph/kebnf-to-tree-sitter");
+        self.emit_line(" */");
+    }
+
+    fn emit_conflicts(&mut self, rules: &[Rule]) {
+        let conflicts = detect_conflicts(rules);
+        if conflicts.is_empty() {
+            return;
+        }
+
+        self.emit_line("conflicts: $ => [");
+        self.indent += 1;
+        for (a, b) in &conflicts {
+            let a_snake = to_snake_case(a);
+            let b_snake = to_snake_case(b);
+            self.emit_line(&format!("[$.{}, $.{}],", a_snake, b_snake));
+        }
+        self.indent -= 1;
+        self.emit_line("],");
+        self.emit_line("");
+    }
+
+    fn emit_source_file_rule(&mut self, rules: &[Rule]) {
+        let top_level: Vec<_> = rules
+            .iter()
+            .filter(|r| is_top_level_rule(&r.name) && !self.canonical_rules.contains_key(&r.name))
+            .map(|r| {
+                let canonical = self.canonical_rules.get(&r.name).unwrap_or(&r.name);
+                format!("$.{}", to_snake_case(canonical))
+            })
+            .collect();
+
+        if top_level.is_empty() {
+            self.emit_line("source_file: $ => repeat($._root_element),");
+        } else {
+            self.emit_line("source_file: $ => repeat(choice(");
+            self.indent += 1;
+            for (i, rule_ref) in top_level.iter().enumerate() {
+                let comma = if i < top_level.len() - 1 { "," } else { "" };
+                self.emit_line(&format!("{}{}", rule_ref, comma));
+            }
+            self.indent -= 1;
+            self.emit_line(")),");
+        }
+        self.emit_line("");
+    }
+
+    fn emit_rule(&mut self, rule: &Rule) -> Result<(), EmitError> {
+        let snake_name = to_snake_case(&rule.name);
+
+        if self.is_problematic_lexical_rule(&rule.name) {
+            return Ok(());
+        }
+
+        if self.canonical_rules.contains_key(&rule.name) {
+            return Ok(());
+        }
+
+        if self.is_empty_matching_rule(&rule.name) {
+            return Ok(());
+        }
+
+        let mut comment = String::new();
+        if let Some(ref produces_type) = rule.produces_type {
+            comment.push_str(&format!(" // : {}", produces_type));
+        }
+        if rule.needs_manual_review() {
+            comment.push_str(" // TODO: Manual review needed (variable prefix)");
+        }
+
+        let body = self.emit_body(&rule.body)?;
+        self.emit_line(&format!("{}: $ => {},{}", snake_name, body, comment));
+        self.emit_line("");
+
+        Ok(())
+    }
+
+    fn is_empty_matching_rule(&self, name: &str) -> bool {
+        const EMPTY_RULES: &[&str] = &[
+            "Identification",
+            "FeatureIdentification",
+            "RootNamespace",
+            "MemberPrefix",
+            "TypePrefix",
+            "EndFeaturePrefix",
+            "BasicFeaturePrefix",
+            "MultiplicityPart",
+            "BindingConnectorDeclaration",
+            "SuccessionDeclaration",
+            "FunctionBodyPart",
+            "EmptyFeature",
+            "BasicDefinitionPrefix",
+            "DefinitionPrefix",
+            "RefPrefix",
+            "EndUsagePrefix",
+            "OccurrenceDefinitionPrefix",
+            "EmptyMultiplicity",
+            "SourceEnd",
+            "PortConjugation",
+            "EmptyUsage",
+            "AssignmentTargetParameter",
+            "EmptyActionUsage",
+            "CalculationBodyPart",
+        ];
+        EMPTY_RULES.contains(&name)
+    }
+
+    fn is_problematic_lexical_rule(&self, name: &str) -> bool {
+        const SKIP_RULES: &[&str] = &[
+            "LINE_TERMINATOR",
+            "LINE_TEXT",
+            "WHITE_SPACE",
+            "SINGLE_LINE_NOTE",
+            "MULTILINE_NOTE",
+            "REGULAR_COMMENT",
+            "COMMENT_TEXT",
+            "COMMENT_LINE_TEXT",
+            "BASIC_INITIAL_CHARACTER",
+            "BASIC_NAME_CHARACTER",
+            "ALPHABETIC_CHARACTER",
+            "DECIMAL_DIGIT",
+            "NAME_CHARACTER",
+            "UNRESTRICTED_NAME_CHARACTER",
+            "ESCAPE_SEQUENCE",
+            "STRING_CHARACTER",
+            "NAME",
+            "BASIC_NAME",
+            "SINGLE_QUOTE",
+            "UNRESTRICTED_NAME",
+            "DECIMAL_VALUE",
+            "EXPONENTIAL_VALUE",
+            "REAL_VALUE",
+            "STRING_VALUE",
+            "PREFIX_COMMENT",
+        ];
+        SKIP_RULES.contains(&name)
+    }
+
+    fn emit_body(&self, body: &RuleBody) -> Result<String, EmitError> {
+        match body {
+            RuleBody::Empty => Ok("seq()".to_string()),
+
+            RuleBody::Terminal(s) => Ok(format!("'{}'", escape_terminal(s))),
+
+            RuleBody::RuleRef(name) => {
+                let canonical = self.canonical_rules.get(name).unwrap_or(name);
+                let snake = to_snake_case(canonical);
+                Ok(format!("$.{}", snake))
+            }
+
+            RuleBody::CrossRef(cross_ref) => {
+                let canonical = self
+                    .canonical_rules
+                    .get(&cross_ref.rule_name)
+                    .unwrap_or(&cross_ref.rule_name);
+                let snake = to_snake_case(canonical);
+                Ok(format!("$.{}", snake))
+            }
+
+            RuleBody::Sequence(items) => {
+                if items.is_empty() {
+                    return Ok("seq()".to_string());
+                }
+                let parts: Result<Vec<_>, _> = items.iter().map(|i| self.emit_body(i)).collect();
+                let parts = parts?;
+                if parts.len() == 1 {
+                    Ok(parts.into_iter().next().unwrap())
+                } else {
+                    Ok(format!("seq({})", parts.join(", ")))
+                }
+            }
+
+            RuleBody::Choice(items) => {
+                if items.is_empty() {
+                    return Ok("seq()".to_string());
+                }
+                let parts: Result<Vec<_>, _> = items.iter().map(|i| self.emit_body(i)).collect();
+                let parts = parts?;
+                if parts.len() == 1 {
+                    Ok(parts.into_iter().next().unwrap())
+                } else {
+                    Ok(format!("choice({})", parts.join(", ")))
+                }
+            }
+
+            RuleBody::Optional(inner) => {
+                let inner_str = self.emit_body(inner)?;
+                Ok(format!("optional({})", inner_str))
+            }
+
+            RuleBody::Repeat(inner) => {
+                let inner_str = self.emit_body(inner)?;
+                Ok(format!("repeat({})", inner_str))
+            }
+
+            RuleBody::Repeat1(inner) => {
+                let inner_str = self.emit_body(inner)?;
+                Ok(format!("repeat1({})", inner_str))
+            }
+
+            RuleBody::Group(inner) => self.emit_body(inner),
+
+            RuleBody::Assignment(assignment) => self.emit_body(&assignment.value),
+
+            RuleBody::BooleanFlag(flag) => {
+                Ok(format!("optional('{}')", escape_terminal(&flag.terminal)))
+            }
+
+            RuleBody::SemanticAction(action) => {
+                if action.is_empty {
+                    Ok("seq()".to_string())
+                } else {
+                    Ok("seq()".to_string())
+                }
+            }
+        }
+    }
+
+    fn emit_builtin_rules(&mut self) {
+        self.emit_line("// Built-in lexical rules (replacing KEBNF lexical grammar)");
+        self.emit_line("comment: $ => token(choice(");
+        self.indent += 1;
+        self.emit_line("seq('//', /[^\\n]*/),");
+        self.emit_line("seq('/*', /[^*]*\\*+([^/*][^*]*\\*+)*/, '/'),");
+        self.indent -= 1;
+        self.emit_line(")),");
+        self.emit_line("");
+        self.emit_line("// Lexical primitives");
+        self.emit_line("name: $ => choice($.basic_name, $.unrestricted_name),");
+        self.emit_line("");
+        self.emit_line("basic_name: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,");
+        self.emit_line("");
+        self.emit_line("unrestricted_name: $ => /'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'/,");
+        self.emit_line("");
+        self.emit_line("string_value: $ => /\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"/,");
+        self.emit_line("");
+        self.emit_line("decimal_value: $ => /[0-9]+/,");
+        self.emit_line("");
+        self.emit_line("exponential_value: $ => /[0-9]+[eE][+-]?[0-9]+/,");
+        self.emit_line("");
+        self.emit_line("real_value: $ => choice(");
+        self.indent += 1;
+        self.emit_line("/[0-9]+\\.[0-9]*([eE][+-]?[0-9]+)?/,");
+        self.emit_line("/\\.[0-9]+([eE][+-]?[0-9]+)?/,");
+        self.indent -= 1;
+        self.emit_line("),");
+        self.emit_line("");
+        self.emit_line("// Comment body (/* ... */)");
+        self.emit_line("regular_comment: $ => /\\/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*\\//,");
+        self.emit_line("");
+        self.emit_line("// Identification rules (transformed to require at least one name)");
+        self.emit_line("// Original: optional(shortName) optional(name) - matches empty");
+        self.emit_line("// Fixed: choice of name forms that always match something");
+        self.emit_line("identification: $ => choice(");
+        self.indent += 1;
+        self.emit_line("seq('<', $.name, '>', optional($.name)),  // <shortName> name?");
+        self.emit_line("$.name,                                    // name only");
+        self.indent -= 1;
+        self.emit_line("),");
+        self.emit_line("");
+        self.emit_line("feature_identification: $ => choice(");
+        self.indent += 1;
+        self.emit_line("seq('<', $.name, '>', optional($.name)),");
+        self.emit_line("$.name,");
+        self.indent -= 1;
+        self.emit_line("),");
+        self.emit_line("");
+        self.emit_line(
+            "// RootNamespace - require at least one element (empty files handled by source_file)",
+        );
+        self.emit_line("root_namespace: $ => repeat1($.namespace_body_element),");
+        self.emit_line("");
+        self.emit_line("// MemberPrefix - visibility indicator (optional in spec, required here)");
+        self.emit_line("member_prefix: $ => $.visibility_indicator,");
+        self.emit_line("");
+        self.emit_line("// TypePrefix - abstract keyword or metadata (at least one required)");
+        self.emit_line("type_prefix: $ => choice(");
+        self.indent += 1;
+        self.emit_line("seq('abstract', repeat($.prefix_metadata_member)),");
+        self.emit_line("repeat1($.prefix_metadata_member),");
+        self.indent -= 1;
+        self.emit_line("),");
+        self.emit_line("");
+        self.emit_line("// Empty-matching rules replaced with non-empty versions or stubs");
+        self.emit_line("end_feature_prefix: $ => $.prefix_metadata_annotation,");
+        self.emit_line("basic_feature_prefix: $ => choice('abstract', 'readonly', 'derived', 'end', $.prefix_metadata_member),");
+        self.emit_line("multiplicity_part: $ => $.owned_multiplicity,");
+        self.emit_line("binding_connector_declaration: $ => $.feature_declaration,");
+        self.emit_line("succession_declaration: $ => $.feature_declaration,");
+        self.emit_line("function_body_part: $ => $.result_expression_member,");
+        self.emit_line(
+            "basic_definition_prefix: $ => choice('abstract', $.prefix_metadata_member),",
+        );
+        self.emit_line("definition_prefix: $ => choice('abstract', $.prefix_metadata_member),");
+        self.emit_line("ref_prefix: $ => choice('ref', $.prefix_metadata_annotation),");
+        self.emit_line("end_usage_prefix: $ => choice('end', $.prefix_metadata_annotation),");
+        self.emit_line(
+            "occurrence_definition_prefix: $ => choice('abstract', $.prefix_metadata_member),",
+        );
+        self.emit_line("source_end: $ => $.owned_feature_member,");
+        self.emit_line("port_conjugation: $ => seq('~', $.qualified_name),");
+        self.emit_line("assignment_target_parameter: $ => $.feature_member,");
+        self.emit_line("calculation_body_part: $ => $.result_expression_member,");
+        self.emit_line("");
+        self.emit_line(
+            "// Semantic-only empty rules - use a marker token that never appears in real input",
+        );
+        self.emit_line("// These represent AST nodes with no syntactic content");
+        self.emit_line(
+            "_empty_marker: $ => '__EMPTY__',  // Hidden rule, never matches real input",
+        );
+        self.emit_line("empty_feature: $ => $._empty_marker,");
+        self.emit_line("empty_multiplicity: $ => $._empty_marker,");
+        self.emit_line("empty_usage: $ => $._empty_marker,");
+        self.emit_line("empty_action_usage: $ => $._empty_marker,");
+        self.emit_line("");
+    }
+
+    fn emit_line(&mut self, line: &str) {
+        if line.is_empty() {
+            self.output.push('\n');
+        } else {
+            let indent = "  ".repeat(self.indent);
+            self.output.push_str(&indent);
+            self.output.push_str(line);
+            self.output.push('\n');
+        }
+    }
+}
+
+fn to_snake_case(name: &str) -> String {
+    if name.chars().all(|c| c.is_uppercase() || c == '_') {
+        return name.to_lowercase();
+    }
+
+    let mut result = String::new();
+    for (i, c) in name.chars().enumerate() {
+        if c.is_uppercase() {
+            if i > 0 {
+                result.push('_');
+            }
+            result.push(c.to_ascii_lowercase());
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+fn escape_terminal(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+fn is_top_level_rule(name: &str) -> bool {
+    let exact_matches = [
+        "RootNamespace",
+        "Package",
+        "LibraryPackage",
+        "FilterPackage",
+        "FilterPackageMember",
+    ];
+    exact_matches.contains(&name)
+}
+
+fn detect_conflicts(rules: &[Rule]) -> Vec<(String, String)> {
+    let mut conflicts = Vec::new();
+    let rule_names: HashSet<_> = rules.iter().map(|r| r.name.as_str()).collect();
+
+    for rule in rules {
+        if rule.name.ends_with("Definition") {
+            let usage_name = rule.name.replace("Definition", "Usage");
+            if rule_names.contains(usage_name.as_str()) {
+                conflicts.push((rule.name.clone(), usage_name));
+            }
+        }
+    }
+
+    let additional_conflicts = vec![
+        ("NamespaceBodyElement", "PackageBodyElement"),
+        ("DefinitionBodyItem", "UsageBodyItem"),
+        ("Package", "PackageDeclaration"),
+        ("LibraryPackage", "PackageDeclaration"),
+        ("NamespaceBody", "RootNamespace"),
+        ("RootNamespace", "RootNamespace"),
+        ("OwnedFeatureChaining", "ElementReferenceMember"),
+        ("FeatureChain", "QualifiedName"),
+        (
+            "PrimaryArgumentMember",
+            "NonFeatureChainPrimaryArgumentMember",
+        ),
+    ];
+    for (a, b) in additional_conflicts {
+        if rule_names.contains(a) && rule_names.contains(b) {
+            conflicts.push((a.to_string(), b.to_string()));
+        }
+    }
+
+    conflicts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snake_case() {
+        assert_eq!(to_snake_case("FooBar"), "foo_bar");
+        assert_eq!(to_snake_case("fooBar"), "foo_bar");
+        assert_eq!(to_snake_case("Foo"), "foo");
+        assert_eq!(to_snake_case("FOO"), "foo");
+        assert_eq!(to_snake_case("IDENTIFIER"), "identifier");
+        assert_eq!(to_snake_case("XML_PARSER"), "xml_parser");
+    }
+
+    #[test]
+    fn test_escape_terminal() {
+        assert_eq!(escape_terminal("foo"), "foo");
+        assert_eq!(escape_terminal("it's"), "it\\'s");
+    }
+}

@@ -1,0 +1,95 @@
+{
+  "version": "0.1.0",
+  "generated_at": "1770773138",
+  "rules": {
+    "TypeName": {
+      "kebnf_name": "TypeName",
+      "tree_sitter_name": "type_name",
+      "source_line": 0,
+      "stripped_annotations": [],
+      "needs_manual_review": false
+    },
+    "Package": {
+      "kebnf_name": "Package",
+      "tree_sitter_name": "package",
+      "source_line": 0,
+      "stripped_annotations": [],
+      "needs_manual_review": false
+    },
+    "PartUsage": {
+      "kebnf_name": "PartUsage",
+      "tree_sitter_name": "part_usage",
+      "source_line": 0,
+      "stripped_annotations": [
+        {
+          "kind": "property_append",
+          "property": "ownedRelationship",
+          "value": null,
+          "operator": "+="
+        }
+      ],
+      "needs_manual_review": false
+    },
+    "PackageBodyElement": {
+      "kebnf_name": "PackageBodyElement",
+      "tree_sitter_name": "package_body_element",
+      "source_line": 0,
+      "stripped_annotations": [],
+      "needs_manual_review": false
+    },
+    "Name": {
+      "kebnf_name": "Name",
+      "tree_sitter_name": "name",
+      "source_line": 0,
+      "stripped_annotations": [],
+      "needs_manual_review": false
+    },
+    "TypePart": {
+      "kebnf_name": "TypePart",
+      "tree_sitter_name": "type_part",
+      "source_line": 0,
+      "stripped_annotations": [],
+      "needs_manual_review": false
+    },
+    "Identification": {
+      "kebnf_name": "Identification",
+      "tree_sitter_name": "identification",
+      "source_line": 0,
+      "produces_type": "Element",
+      "stripped_annotations": [],
+      "needs_manual_review": false
+    },
+    "PackageBody": {
+      "kebnf_name": "PackageBody",
+      "tree_sitter_name": "package_body",
+      "source_line": 0,
+      "stripped_annotations": [],
+      "needs_manual_review": false
+    },
+    "PartDefinition": {
+      "kebnf_name": "PartDefinition",
+      "tree_sitter_name": "part_definition",
+      "source_line": 0,
+      "stripped_annotations": [
+        {
+          "kind": "boolean_flag",
+          "property": "isAbstract",
+          "value": "abstract",
+          "operator": "?="
+        }
+      ],
+      "needs_manual_review": false
+    }
+  },
+  "statistics": {
+    "total_rules": 9,
+    "direct_conversion": 7,
+    "strip_and_convert": 2,
+    "best_effort": 0,
+    "manual_review": 0,
+    "by_annotation_type": {
+      "BooleanFlag": 1,
+      "PropertyAppend": 1
+    }
+  }
+}
