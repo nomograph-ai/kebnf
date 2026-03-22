@@ -34,21 +34,9 @@ pub fn fetch_specs(verbose: bool) -> Result<Vec<PathBuf>, FetchError> {
 }
 
 pub fn get_cache_dir() -> Result<PathBuf, FetchError> {
-    let proj_dirs = directories::ProjectDirs::from("dev", "dunn", "kebnf-to-tree-sitter")
+    let proj_dirs = directories::ProjectDirs::from("ai", "nomograph", "kebnf")
         .ok_or_else(|| FetchError::NoCacheDir)?;
     Ok(proj_dirs.cache_dir().to_path_buf())
-}
-
-pub fn get_cached_specs() -> Option<(PathBuf, PathBuf)> {
-    let cache_dir = get_cache_dir().ok()?;
-    let kerml = cache_dir.join("KerML-textual-bnf.kebnf");
-    let sysml = cache_dir.join("SysML-textual-bnf.kebnf");
-
-    if kerml.exists() && sysml.exists() {
-        Some((kerml, sysml))
-    } else {
-        None
-    }
 }
 
 #[derive(Debug)]

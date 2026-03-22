@@ -63,24 +63,7 @@ pub struct SemanticAction {
     pub is_empty: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SymbolAlias {
-    pub name: String,
-    pub alternatives: Vec<Vec<String>>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Grammar {
-    pub rules: Vec<Rule>,
-    pub symbol_aliases: Vec<SymbolAlias>,
-}
-
 impl RuleBody {
-    pub fn is_empty(&self) -> bool {
-        matches!(self, RuleBody::Empty)
-    }
-
     pub fn sequence(items: Vec<RuleBody>) -> Self {
         match items.len() {
             0 => RuleBody::Empty,

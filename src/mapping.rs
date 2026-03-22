@@ -99,8 +99,10 @@ pub struct Statistics {
 
 pub fn generate(rules: &[Rule]) -> Result<String, Box<dyn std::error::Error>> {
     let mut rule_mappings = HashMap::new();
-    let mut stats = Statistics::default();
-    stats.total_rules = rules.len();
+    let mut stats = Statistics {
+        total_rules: rules.len(),
+        ..Default::default()
+    };
 
     for rule in rules {
         let stripped = collect_stripped_annotations(&rule.body);
@@ -157,8 +159,10 @@ pub fn generate(rules: &[Rule]) -> Result<String, Box<dyn std::error::Error>> {
 }
 
 pub fn compute_stats(rules: &[Rule]) -> Statistics {
-    let mut stats = Statistics::default();
-    stats.total_rules = rules.len();
+    let mut stats = Statistics {
+        total_rules: rules.len(),
+        ..Default::default()
+    };
 
     for rule in rules {
         let stripped = collect_stripped_annotations(&rule.body);
@@ -214,14 +218,10 @@ fn collect_annotations_recursive(body: &RuleBody, annotations: &mut Vec<Stripped
                     .to_string(),
                 ),
             });
-            if a.variable_prefix.is_some() {
+            if let Some(prefix) = &a.variable_prefix {
                 annotations.push(StrippedAnnotation {
                     kind: AnnotationKind::VariablePrefix,
-                    property: Some(format!(
-                        "{}.{}",
-                        a.variable_prefix.as_ref().unwrap(),
-                        a.property
-                    )),
+                    property: Some(format!("{}.{}", prefix, a.property)),
                     value: None,
                     operator: None,
                 });
@@ -236,14 +236,10 @@ fn collect_annotations_recursive(body: &RuleBody, annotations: &mut Vec<Stripped
                 value: Some(f.terminal.clone()),
                 operator: Some("?=".to_string()),
             });
-            if f.variable_prefix.is_some() {
+            if let Some(prefix) = &f.variable_prefix {
                 annotations.push(StrippedAnnotation {
                     kind: AnnotationKind::VariablePrefix,
-                    property: Some(format!(
-                        "{}.{}",
-                        f.variable_prefix.as_ref().unwrap(),
-                        f.property
-                    )),
+                    property: Some(format!("{}.{}", prefix, f.property)),
                     value: None,
                     operator: None,
                 });

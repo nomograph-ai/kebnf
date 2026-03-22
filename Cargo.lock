@@ -749,7 +749,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kebnf-to-tree-sitter"
+name = "kebnf"
 version = "0.1.0"
 dependencies = [
  "ariadne",
