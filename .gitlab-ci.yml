@@ -1,0 +1,89 @@
+stages:
+  - test
+  - validate
+
+default:
+  image: rust:1.94
+
+# ============================================================================
+# Test Stage — Rust build, clippy, tests
+# ============================================================================
+
+rust-build:
+  stage: test
+  cache:
+    key: rust-${CI_COMMIT_REF_SLUG}
+    paths:
+      - target/
+  script:
+    - cargo build --release 2>&1 | tee build-output.txt
+    - "! grep -q 'warning:.*kebnf' build-output.txt"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+rust-test:
+  stage: test
+  cache:
+    key: rust-${CI_COMMIT_REF_SLUG}
+    paths:
+      - target/
+  script:
+    - cargo test --all-features
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+rust-clippy:
+  stage: test
+  cache:
+    key: rust-${CI_COMMIT_REF_SLUG}
+    paths:
+      - target/
+  script:
+    - rustup component add clippy
+    - cargo clippy -- -D warnings
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ============================================================================
+# Validate Stage — ANTLR4 grammar compilation
+# ============================================================================
+
+antlr4-validate:
+  stage: validate
+  image: eclipse-temurin:21-jdk
+  needs: ["rust-build"]
+  before_script:
+    # Install Rust in the Java image
+    - apt-get update -qq && apt-get install -y -qq curl build-essential pkg-config libssl-dev > /dev/null
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.94.0
+    - source "$HOME/.cargo/env"
+    # Download ANTLR4
+    - curl -sLO https://www.antlr.org/download/antlr-4.13.2-complete.jar
+  script:
+    # Build kebnf
+    - cargo build --release
+    # Generate ANTLR4 grammar from KerML + SysML specs
+    - >-
+      ./target/release/kebnf
+      tests/kebnf/KerML-textual-bnf.kebnf
+      tests/kebnf/SysML-textual-bnf.kebnf
+      --format antlr4 -o Sysml.g4 --stats
+    # Validate with ANTLR4 — must produce zero errors
+    - java -jar antlr-4.13.2-complete.jar Sysml.g4 2>&1 | tee antlr4-output.txt
+    - "! grep -q '^error' antlr4-output.txt"
+    # Compile generated Java parser — must succeed
+    - javac -cp antlr-4.13.2-complete.jar Sysml*.java
+    - echo "ANTLR4 validation passed — $(ls Sysml*.class | wc -l) class files generated"
+  artifacts:
+    paths:
+      - Sysml.g4
+      - antlr4-output.txt
+    expire_in: 30 days
+    when: always
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+

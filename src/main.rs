@@ -3,23 +3,27 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 mod ast;
-mod emitter;
+mod emitters;
 mod fetch;
 mod mapping;
 mod parser;
 
 #[derive(ClapParser, Debug)]
-#[command(name = "kebnf-to-tree-sitter")]
-#[command(about = "Convert OMG KEBNF grammars to tree-sitter grammar.js files")]
+#[command(name = "kebnf")]
+#[command(about = "Swiss army knife for OMG KeBNF grammars")]
 #[command(version)]
 struct Cli {
     /// Input KEBNF file(s)
     #[arg(required_unless_present = "fetch_spec")]
     input: Vec<PathBuf>,
 
-    /// Output grammar.js file path
-    #[arg(short, long, default_value = "grammar.js")]
-    output: PathBuf,
+    /// Output file path (default depends on --format)
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Output format: tree-sitter, antlr4
+    #[arg(short, long, default_value = "tree-sitter")]
+    format: String,
 
     /// Output mapping.json file path
     #[arg(short, long)]
@@ -58,7 +62,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
 
     if cli.verbose {
-        eprintln!("kebnf-to-tree-sitter v{}", env!("CARGO_PKG_VERSION"));
+        eprintln!("kebnf v{}", env!("CARGO_PKG_VERSION"));
     }
 
     if cli.fetch_spec {
@@ -93,6 +97,16 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    let format: emitters::OutputFormat = cli
+        .format
+        .parse()
+        .map_err(|e: String| -> Box<dyn std::error::Error> { e.into() })?;
+
+    let output_path = cli.output.clone().unwrap_or_else(|| {
+        let ext = emitters::default_extension(format);
+        PathBuf::from(format!("grammar.{}", ext))
+    });
+
     let mut all_rules = Vec::new();
 
     for input_path in &cli.input {
@@ -115,11 +129,11 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("After filtering: {} rules", filtered_rules.len());
     }
 
-    let grammar_js = emitter::emit(&filtered_rules, &cli.name)?;
-    std::fs::write(&cli.output, &grammar_js)?;
+    let output_content = emitters::emit(&filtered_rules, &cli.name, format)?;
+    std::fs::write(&output_path, &output_content)?;
 
     if cli.verbose {
-        eprintln!("Wrote grammar to: {}", cli.output.display());
+        eprintln!("Wrote {} grammar to: {}", format, output_path.display());
     }
 
     if let Some(mapping_path) = &cli.mapping {
@@ -137,20 +151,20 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if cli.validate {
-        if cli.verbose {
-            eprintln!("Validating with tree-sitter generate...");
+        if format != emitters::OutputFormat::TreeSitter {
+            eprintln!("Warning: --validate only supported for tree-sitter format");
+        } else {
+            if cli.verbose {
+                eprintln!("Validating with tree-sitter generate...");
+            }
+            validate_grammar(&output_path)?;
         }
-        validate_grammar(&cli.output)?;
     }
 
     Ok(())
 }
 
-fn filter_rules(
-    rules: Vec<ast::Rule>,
-    include: &[String],
-    exclude: &[String],
-) -> Vec<ast::Rule> {
+fn filter_rules(rules: Vec<ast::Rule>, include: &[String], exclude: &[String]) -> Vec<ast::Rule> {
     rules
         .into_iter()
         .filter(|rule| {
@@ -163,13 +177,12 @@ fn filter_rules(
 }
 
 fn matches_pattern(name: &str, pattern: &str) -> bool {
-    if pattern.starts_with('*') && pattern.ends_with('*') {
-        let middle = &pattern[1..pattern.len() - 1];
+    if let Some(middle) = pattern.strip_prefix('*').and_then(|s| s.strip_suffix('*')) {
         name.contains(middle)
-    } else if pattern.starts_with('*') {
-        name.ends_with(&pattern[1..])
-    } else if pattern.ends_with('*') {
-        name.starts_with(&pattern[..pattern.len() - 1])
+    } else if let Some(suffix) = pattern.strip_prefix('*') {
+        name.ends_with(suffix)
+    } else if let Some(prefix) = pattern.strip_suffix('*') {
+        name.starts_with(prefix)
     } else {
         name == pattern
     }

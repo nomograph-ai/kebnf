@@ -5,7 +5,6 @@ use chumsky::prelude::*;
 pub struct ParseError {
     pub message: String,
     pub span: Span,
-    pub source_name: String,
 }
 
 impl std::fmt::Display for ParseError {
@@ -16,14 +15,13 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-pub fn parse(source: &str, source_name: &str) -> Result<Vec<Rule>, ParseError> {
+pub fn parse(source: &str, _source_name: &str) -> Result<Vec<Rule>, ParseError> {
     let tokens = lexer()
         .parse(source)
         .into_result()
         .map_err(|errs| ParseError {
             message: format!("Lexer errors: {:?}", errs),
             span: 0..source.len(),
-            source_name: source_name.to_string(),
         })?;
 
     let rule_chunks = split_into_rules(&tokens);
@@ -42,7 +40,6 @@ pub fn parse(source: &str, source_name: &str) -> Result<Vec<Rule>, ParseError> {
             .map_err(|errs| ParseError {
                 message: format!("Parser errors in chunk {}: {:?}", idx, errs),
                 span: 0..source.len(),
-                source_name: source_name.to_string(),
             })?;
         rules.push(rule);
     }
@@ -237,10 +234,9 @@ fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Token>, extra::Err<Rich<'a, char>
 fn rule_parser<'a>() -> impl Parser<'a, &'a [Token], Rule, extra::Err<Rich<'a, Token>>> {
     let ident = select! { Token::Ident(s) => s.clone() };
 
-    let type_annotation = just(Token::Colon).ignore_then(ident.clone()).or_not();
+    let type_annotation = just(Token::Colon).ignore_then(ident).or_not();
 
     ident
-        .clone()
         .then(type_annotation)
         .then_ignore(just(Token::Equals))
         .then(rule_body_parser())
@@ -261,7 +257,6 @@ fn rule_body_parser<'a>() -> impl Parser<'a, &'a [Token], RuleBody, extra::Err<R
         let terminal_rule = terminal.map(RuleBody::Terminal);
 
         let rule_ref = ident
-            .clone()
             .then(
                 choice((
                     just(Token::Colon),
@@ -277,7 +272,7 @@ fn rule_body_parser<'a>() -> impl Parser<'a, &'a [Token], RuleBody, extra::Err<R
         let cross_ref = just(Token::Tilde)
             .or_not()
             .then_ignore(just(Token::LBracket))
-            .then(ident.clone())
+            .then(ident)
             .then_ignore(just(Token::RBracket))
             .map(|(tilde, name)| {
                 RuleBody::CrossRef(CrossRef {
@@ -286,13 +281,13 @@ fn rule_body_parser<'a>() -> impl Parser<'a, &'a [Token], RuleBody, extra::Err<R
                 })
             });
 
-        let variable_prefix = ident.clone().then_ignore(just(Token::Dot)).or_not();
+        let variable_prefix = ident.then_ignore(just(Token::Dot)).or_not();
 
         let boolean_flag = variable_prefix
             .clone()
-            .then(ident.clone())
+            .then(ident)
             .then_ignore(just(Token::QuestionEquals))
-            .then(terminal.clone())
+            .then(terminal)
             .map(|((prefix, property), term)| {
                 RuleBody::BooleanFlag(BooleanFlag {
                     property,
@@ -313,12 +308,12 @@ fn rule_body_parser<'a>() -> impl Parser<'a, &'a [Token], RuleBody, extra::Err<R
                 .then_ignore(just(Token::RParen))
                 .map(|b| RuleBody::Group(Box::new(b))),
             rule_ref.clone(),
-            terminal_rule.clone(),
+            terminal_rule,
         ))
         .boxed();
 
         let assignment = variable_prefix
-            .then(ident.clone())
+            .then(ident)
             .then(assignment_op.clone())
             .then(assignment_value)
             .map(|(((prefix, property), operator), value)| {
@@ -336,10 +331,9 @@ fn rule_body_parser<'a>() -> impl Parser<'a, &'a [Token], RuleBody, extra::Err<R
         ));
 
         let dotted_path = ident
-            .clone()
             .then(
                 just(Token::Dot)
-                    .ignore_then(ident.clone())
+                    .ignore_then(ident)
                     .repeated()
                     .collect::<Vec<_>>(),
             )
@@ -357,7 +351,7 @@ fn rule_body_parser<'a>() -> impl Parser<'a, &'a [Token], RuleBody, extra::Err<R
                 dotted_path
                     .clone()
                     .then(semantic_action_op)
-                    .then(dotted_path.clone().or(terminal.clone()))
+                    .then(dotted_path.clone().or(terminal))
                     .map(|((prop, op), val)| SemanticAction {
                         property: Some(prop),
                         value: Some(format!("{}{}", op, val)),

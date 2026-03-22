@@ -1,12 +1,12 @@
 [package]
-name = "kebnf-to-tree-sitter"
+name = "kebnf"
 version = "0.1.0"
 edition = "2024"
-description = "Convert OMG KEBNF grammars to tree-sitter grammar.js files"
+description = "Swiss army knife for OMG KeBNF grammars — convert to tree-sitter, ANTLR4, and more"
 license = "MIT"
-repository = "https://gitlab.com/nomograph/kebnf-to-tree-sitter"
+repository = "https://gitlab.com/nomograph/kebnf"
 authors = ["Nomograph Labs"]
-keywords = ["sysml", "kebnf", "tree-sitter", "parser", "grammar"]
+keywords = ["sysml", "kebnf", "grammar", "parser", "antlr4"]
 categories = ["development-tools", "parsing"]
 
 [dependencies]
