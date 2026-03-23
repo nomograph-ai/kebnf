@@ -1,6 +1,7 @@
 # kebnf
 
 [![Nomograph Labs](https://img.shields.io/badge/Nomograph_Labs-1a1a1a?style=flat&labelColor=f2f0eb&color=1a1a1a)](https://nomograph.ai)
+[![crates.io](https://img.shields.io/crates/v/kebnf.svg?color=1a1a1a)](https://crates.io/crates/kebnf)
 [![License: MIT](https://img.shields.io/badge/License-MIT-1a1a1a.svg)](LICENSE)
 [![pipeline status](https://gitlab.com/nomograph/kebnf/badges/main/pipeline.svg)](https://gitlab.com/nomograph/kebnf/-/pipelines)
 
@@ -13,7 +14,7 @@ output with semantic traceability.
 | Format | Flag | Output | Status |
 |--------|------|--------|--------|
 | **ANTLR4** | `--format antlr4` | `.g4` | **CI-validated** -- compiles with antlr4 4.13.2, javac 21 |
-| **tree-sitter** | `--format tree-sitter` | `grammar.js` | **CI-validated** -- 82.8% corpus coverage, 0.15ms parse speed. Pattern-based emission with inlined prefix keywords. |
+| **tree-sitter** | `--format tree-sitter` | `grammar.js` | **CI-validated** -- 96.9% corpus coverage (186/192), 0.15ms parse speed. 11 categories at 100%. |
 
 ## Quick Start
 
@@ -57,19 +58,47 @@ usage rule has its prefix keywords inlined for early disambiguation.
 This eliminates the shared-prefix ambiguity that causes GLR timeout in
 naive conversion approaches.
 
-**Corpus coverage: 82.8%** (159/192 test snippets from
+**Corpus coverage: 96.9%** (186/192 test snippets from
 [tree-sitter-sysml](https://gitlab.com/nomograph/tree-sitter-sysml))
 
 | Category | Coverage |
 |----------|----------|
-| Attributes, Calculations | 100% |
-| Definitions, Expressions | 95%+ |
-| States | 91% |
-| Packages, Constraints, Requirements | 82-89% |
-| Actions, Flows | 80% |
-| Views, Usages | 75-83% |
+| Attributes, Calculations, Constraints, Definitions, Expressions, Flows, Metadata, Requirements, States, Successions, Actions | 100% |
+| Views | 96% |
+| Usages | 94% |
+| Packages | 89% |
+| Connections | 80% |
 
 Parse speed: 0.15ms for typical files (4000+ bytes/ms).
+
+### Known Limitations (6 remaining failures)
+
+The following constructs are not yet supported. They require structural
+changes to the usage pattern that cause tree-sitter's LR table generation
+to timeout, or involve keyword/name ambiguity that tree-sitter cannot
+resolve without external tokenization.
+
+1. **Multiplicity + specialization after type**: `part wheels : Wheel[4] :> parts;`
+   -- the specialization `:> parts` after multiplicity `[4]` requires
+   `repeat(feature_specialization)` in the usage pattern, which causes
+   combinatorial conflict explosion during LR table generation.
+
+2. **Specialization before name**: `item :> shapes : Box[1] { }` -- the
+   `:>` subsetting appears before the name, which the usage_declaration
+   rule does not expect.
+
+3. **Complex end features**: `end theCauses [*] occurrence theCause :> causes :>> source { }`
+   -- multiple keywords and specializations in an end feature declaration.
+
+4. **N-ary connect syntax**: `( cause1 ::> causer1, cause2 ::> causer2 )`
+   -- parenthesized connection endpoints with `::>` bindings.
+
+5. **Keyword/name ambiguity**: `comment about Vehicle /* ... */` -- the
+   `comment` keyword is also a valid identifier, and tree-sitter cannot
+   disambiguate without context-sensitive tokenization.
+
+6. **Nested redefinition in rendering**: `view :>> columnView[1] { }`
+   -- the `view` keyword with `:>>` redefinition inside a rendering body.
 
 See [docs/TREE-SITTER-FINDINGS.md](docs/TREE-SITTER-FINDINGS.md) for the
 full research journey from mechanical conversion to pattern-based emission.
