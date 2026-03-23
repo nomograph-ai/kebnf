@@ -51,6 +51,40 @@ rust-clippy:
 # Validate Stage — ANTLR4 grammar compilation
 # ============================================================================
 
+tree-sitter-validate:
+  stage: validate
+  image: rust:1.94
+  needs: ["rust-build"]
+  cache:
+    key: ts-cli-${CI_COMMIT_REF_SLUG}
+    paths:
+      - target/
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq nodejs libclang-dev > /dev/null
+    - cargo install tree-sitter-cli --locked
+    - export PATH="$HOME/.cargo/bin:$PATH"
+  script:
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - cargo build --release
+    - >-
+      ./target/release/kebnf
+      tests/kebnf/KerML-textual-bnf.kebnf
+      tests/kebnf/SysML-textual-bnf.kebnf
+      --format tree-sitter -o grammar.js
+    - echo '{"metadata":{"version":"0.0.1","links":{}},"grammars":[{"name":"sysml","path":"."}]}' > tree-sitter.json
+    - echo '{"name":"ts-validate","version":"0.0.1"}' > package.json
+    - tree-sitter generate
+    - test -f src/parser.c
+    - echo "tree-sitter generate passed — $(wc -l < src/parser.c) lines"
+  artifacts:
+    paths:
+      - grammar.js
+    expire_in: 30 days
+    when: always
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 antlr4-validate:
   stage: validate
   image: eclipse-temurin:21-jdk
