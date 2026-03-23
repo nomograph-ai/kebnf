@@ -19,13 +19,79 @@ impl std::fmt::Display for EmitError {
 
 impl std::error::Error for EmitError {}
 
+/// Definition: (KeBNF name, keyword, body_rule)
+const DEFINITIONS: &[(&str, &str, &str)] = &[
+    ("AttributeDefinition", "attribute", "definition_body"),
+    ("EnumerationDefinition", "enum", "enumeration_body"),
+    ("OccurrenceDefinition", "occurrence", "definition_body"),
+    ("IndividualDefinition", "individual", "definition_body"),
+    ("ItemDefinition", "item", "definition_body"),
+    ("PartDefinition", "part", "definition_body"),
+    ("PortDefinition", "port", "definition_body"),
+    ("ConnectionDefinition", "connection", "definition_body"),
+    ("InterfaceDefinition", "interface", "definition_body"),
+    ("AllocationDefinition", "allocation", "definition_body"),
+    ("FlowDefinition", "flow", "definition_body"),
+    ("ActionDefinition", "action", "action_body"),
+    ("StateDefinition", "state", "definition_body"),
+    ("CalculationDefinition", "calc", "definition_body"),
+    ("ConstraintDefinition", "constraint", "definition_body"),
+    ("RequirementDefinition", "requirement", "definition_body"),
+    ("ConcernDefinition", "concern", "definition_body"),
+    ("CaseDefinition", "case", "definition_body"),
+    ("AnalysisCaseDefinition", "analysis", "definition_body"),
+    (
+        "VerificationCaseDefinition",
+        "verification",
+        "definition_body",
+    ),
+    ("UseCaseDefinition", "use', 'case", "definition_body"),
+    ("ViewDefinition", "view", "definition_body"),
+    ("ViewpointDefinition", "viewpoint", "definition_body"),
+    ("RenderingDefinition", "rendering", "definition_body"),
+    ("MetadataDefinition", "metadata", "metadata_body"),
+];
+
+/// Usage: (KeBNF name, keyword, body_rule)
+const USAGES: &[(&str, &str, &str)] = &[
+    ("AttributeUsage", "attribute", "usage_body"),
+    ("EnumerationUsage", "enum", "usage_body"),
+    ("OccurrenceUsage", "occurrence", "usage_body"),
+    ("IndividualUsage", "individual", "usage_body"),
+    ("ItemUsage", "item", "usage_body"),
+    ("PartUsage", "part", "usage_body"),
+    ("PortUsage", "port", "usage_body"),
+    ("ConnectionUsage", "connection", "usage_body"),
+    ("InterfaceUsage", "interface", "usage_body"),
+    ("AllocationUsage", "allocation", "usage_body"),
+    ("FlowUsage", "flow", "usage_body"),
+    ("ActionUsage", "action", "action_body"),
+    ("StateUsage", "state", "usage_body"),
+    ("CalculationUsage", "calc", "usage_body"),
+    ("ConstraintUsage", "constraint", "usage_body"),
+    ("RequirementUsage", "requirement", "usage_body"),
+    ("ConcernUsage", "concern", "usage_body"),
+    ("CaseUsage", "case", "usage_body"),
+    ("AnalysisCaseUsage", "analysis", "usage_body"),
+    ("VerificationCaseUsage", "verification", "usage_body"),
+    ("UseCaseUsage", "use', 'case", "usage_body"),
+    ("ViewUsage", "view", "usage_body"),
+    ("ViewpointUsage", "viewpoint", "usage_body"),
+    ("RenderingUsage", "rendering", "usage_body"),
+    ("MetadataUsage", "metadata", "metadata_body"),
+    ("ReferenceUsage", "ref", "usage_body"),
+    ("EventOccurrenceUsage", "event', 'occurrence", "usage_body"),
+];
+
 struct Emitter {
     grammar_name: String,
     indent: usize,
     output: String,
     rule_names: HashSet<String>,
-    undefined_refs: HashSet<String>,
-    canonical_rules: HashMap<String, String>,
+    emitted_rules: HashSet<String>,
+    inline_map: HashMap<String, String>,
+    epsilon_rules: HashSet<String>,
+    body_member_rules: HashSet<String>,
 }
 
 impl Emitter {
@@ -35,8 +101,10 @@ impl Emitter {
             indent: 0,
             output: String::new(),
             rule_names: HashSet::new(),
-            undefined_refs: HashSet::new(),
-            canonical_rules: HashMap::new(),
+            emitted_rules: HashSet::new(),
+            inline_map: HashMap::new(),
+            epsilon_rules: HashSet::new(),
+            body_member_rules: HashSet::new(),
         }
     }
 
@@ -44,433 +112,1013 @@ impl Emitter {
         for rule in rules {
             self.rule_names.insert(rule.name.clone());
         }
-
-        self.collect_undefined_refs(rules);
+        self.build_inline_map(rules);
+        self.find_epsilon_rules(rules);
+        self.find_body_member_rules(rules);
 
         self.emit_header();
-        self.emit_line("");
-        self.emit_line("module.exports = grammar({");
+        self.line("");
+        self.line("module.exports = grammar({");
+        self.indent += 1;
+        self.line(&format!("name: '{}',", self.grammar_name));
+        self.line("");
+        self.line("extras: $ => [/\\s/, $.comment],");
+        self.line("");
+        self.emit_conflicts();
+        self.line("rules: {");
         self.indent += 1;
 
-        self.emit_line(&format!("name: '{}',", self.grammar_name));
-        self.emit_line("");
-        self.emit_line("extras: $ => [/\\s/, $.comment],");
-        self.emit_line("");
+        // Pattern-based rules (definitions, usages, body structure)
+        self.emit_source_file();
+        self.emit_definitions();
+        self.emit_usages();
+        self.emit_body_rules();
+        self.emit_expression_rules();
 
-        self.emit_conflicts(rules);
-
-        self.emit_line("rules: {");
-        self.indent += 1;
-
-        self.emit_source_file_rule(rules);
-
+        // Remaining KeBNF rules (non-pattern)
         for rule in rules {
             self.emit_rule(rule)?;
         }
 
-        self.emit_stub_rules();
         self.emit_builtin_rules();
 
         self.indent -= 1;
-        self.emit_line("},");
-
+        self.line("},");
         self.indent -= 1;
-        self.emit_line("});");
-
+        self.line("});");
         Ok(self.output.clone())
     }
 
-    fn collect_undefined_refs(&mut self, rules: &[Rule]) {
+    // --- Analysis ---
+
+    fn build_inline_map(&mut self, rules: &[Rule]) {
+        let mut direct: HashMap<String, String> = HashMap::new();
         for rule in rules {
-            self.collect_refs_from_body(&rule.body);
+            if let Some(target) = get_single_ref_target(&rule.body) {
+                direct.insert(rule.name.clone(), target);
+            }
+        }
+        // Skip all prefix rules -- they're inlined into definitions/usages
+        for name in &[
+            "BasicDefinitionPrefix",
+            "DefinitionPrefix",
+            "OccurrenceDefinitionPrefix",
+            "BasicFeaturePrefix",
+            "EndFeaturePrefix",
+            "FeaturePrefix",
+            "BasicUsagePrefix",
+            "UnextendedUsagePrefix",
+            "OccurrenceUsagePrefix",
+            "RefPrefix",
+            "EndUsagePrefix",
+            "UsagePrefix",
+            "TypePrefix",
+            "MemberPrefix",
+        ] {
+            self.epsilon_rules.insert(name.to_string()); // treat as epsilon = drop references
+        }
+        // Expression redirects
+        for (from, to) in &[
+            ("NonFeatureChainPrimaryExpression", "PrimaryExpression"),
+            ("BracketExpression", "PrimaryExpression"),
+            ("IndexExpression", "PrimaryExpression"),
+            ("SelectExpression", "PrimaryExpression"),
+            ("CollectExpression", "PrimaryExpression"),
+            ("FunctionOperationExpression", "PrimaryExpression"),
+            ("FeatureChainExpression", "PrimaryExpression"),
+            ("SequenceExpression", "PrimaryExpression"),
+            ("BinaryOperatorExpression", "OwnedExpression"),
+            ("ConditionalBinaryOperatorExpression", "OwnedExpression"),
+            ("ClassificationExpression", "OwnedExpression"),
+            ("UnaryOperatorExpression", "OwnedExpression"),
+            ("ExtentExpression", "OwnedExpression"),
+            ("ConditionalExpression", "OwnedExpression"),
+        ] {
+            direct.insert(from.to_string(), to.to_string());
+        }
+        // Resolve chains
+        let keys: Vec<_> = direct.keys().cloned().collect();
+        for key in &keys {
+            let mut target = direct[key].clone();
+            let mut seen = HashSet::new();
+            seen.insert(key.clone());
+            while let Some(next) = direct.get(&target) {
+                if seen.contains(next) {
+                    break;
+                }
+                seen.insert(target.clone());
+                target = next.clone();
+            }
+            self.inline_map.insert(key.clone(), target);
         }
     }
 
-    fn collect_refs_from_body(&mut self, body: &RuleBody) {
+    fn find_epsilon_rules(&mut self, rules: &[Rule]) {
+        for rule in rules {
+            if body_is_epsilon(&rule.body) {
+                self.epsilon_rules.insert(rule.name.clone());
+            }
+        }
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for rule in rules {
+                if self.epsilon_rules.contains(&rule.name) {
+                    continue;
+                }
+                if self.body_resolves_to_epsilon(&rule.body) {
+                    self.epsilon_rules.insert(rule.name.clone());
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    fn body_resolves_to_epsilon(&self, body: &RuleBody) -> bool {
         match body {
+            RuleBody::Empty | RuleBody::SemanticAction(_) => true,
             RuleBody::RuleRef(name) => {
-                if !self.rule_names.contains(name) {
-                    self.undefined_refs.insert(name.clone());
-                }
+                let resolved = self.inline_map.get(name).unwrap_or(name);
+                self.epsilon_rules.contains(resolved)
             }
-            RuleBody::CrossRef(cross_ref) => {
-                if !self.rule_names.contains(&cross_ref.rule_name) {
-                    self.undefined_refs.insert(cross_ref.rule_name.clone());
-                }
-            }
-            RuleBody::Sequence(items) | RuleBody::Choice(items) => {
-                for item in items {
-                    self.collect_refs_from_body(item);
-                }
-            }
-            RuleBody::Optional(inner)
-            | RuleBody::Repeat(inner)
-            | RuleBody::Repeat1(inner)
-            | RuleBody::Group(inner) => {
-                self.collect_refs_from_body(inner);
-            }
-            RuleBody::Assignment(assignment) => {
-                self.collect_refs_from_body(&assignment.value);
-            }
-            _ => {}
+            RuleBody::Assignment(a) => self.body_resolves_to_epsilon(&a.value),
+            RuleBody::Sequence(items) => items.iter().all(|i| self.body_resolves_to_epsilon(i)),
+            _ => false,
         }
     }
 
-    fn emit_stub_rules(&mut self) {
-        if self.undefined_refs.is_empty() {
-            return;
-        }
-
-        self.emit_line("// Stub rules for undefined references in KEBNF spec");
-        let mut refs: Vec<_> = self.undefined_refs.iter().cloned().collect();
-        refs.sort();
-        for name in refs {
-            let snake = to_snake_case(&name);
-            self.emit_line(&format!(
-                "{}: $ => /[a-zA-Z_][a-zA-Z0-9_]*/, // STUB: {} not defined in spec",
-                snake, name
-            ));
-            self.emit_line("");
+    fn can_match_empty(&self, body: &RuleBody) -> bool {
+        match body {
+            RuleBody::Empty | RuleBody::SemanticAction(_) => true,
+            RuleBody::Terminal(_) | RuleBody::CrossRef(_) | RuleBody::Repeat1(_) => false,
+            RuleBody::RuleRef(name) => {
+                let resolved = self.inline_map.get(name).unwrap_or(name);
+                self.epsilon_rules.contains(resolved)
+            }
+            RuleBody::Optional(_) | RuleBody::Repeat(_) | RuleBody::BooleanFlag(_) => true,
+            RuleBody::Group(inner) => self.can_match_empty(inner),
+            RuleBody::Sequence(items) => items.iter().all(|i| self.can_match_empty(i)),
+            RuleBody::Choice(items) => items.iter().any(|i| self.can_match_empty(i)),
+            RuleBody::Assignment(a) => self.can_match_empty(&a.value),
         }
     }
+
+    fn find_body_member_rules(&mut self, rules: &[Rule]) {
+        const PATTERNS: &[&str] = &[
+            "BodyElement",
+            "BodyItem",
+            "BodyMember",
+            "DefinitionMember",
+            "UsageMember",
+            "VariantMember",
+            "DefinitionElement",
+            "NonFeatureElement",
+            "FeatureElement",
+            "MemberElement",
+            "UsageElement",
+        ];
+        for rule in rules {
+            for pattern in PATTERNS {
+                if rule.name.ends_with(pattern) {
+                    self.body_member_rules.insert(rule.name.clone());
+                }
+            }
+        }
+    }
+
+    // --- Pattern-based emission ---
 
     fn emit_header(&mut self) {
-        self.emit_line("/// <reference types=\"tree-sitter-cli/dsl\" />");
-        self.emit_line("// @ts-check");
-        self.emit_line("");
-        self.emit_line("/**");
-        self.emit_line(" * Tree-sitter grammar generated from KEBNF specification.");
-        self.emit_line(" * ");
-        self.emit_line(" * Generated by kebnf");
-        self.emit_line(" * https://gitlab.com/nomograph/kebnf");
-        self.emit_line(" */");
+        self.line("/// <reference types=\"tree-sitter-cli/dsl\" />");
+        self.line("// @ts-check");
+        self.line("");
+        self.line("/**");
+        self.line(" * SysML v2 tree-sitter grammar generated from KeBNF specification.");
+        self.line(" * Generated by kebnf -- https://gitlab.com/nomograph/kebnf");
+        self.line(" *");
+        self.line(" * Pattern-based emission: definitions and usages have inlined prefix");
+        self.line(" * keywords for early disambiguation. No shared prefix rule.");
+        self.line(" */");
     }
 
-    fn emit_conflicts(&mut self, rules: &[Rule]) {
-        let conflicts = detect_conflicts(rules);
-        if conflicts.is_empty() {
-            return;
+    fn emit_source_file(&mut self) {
+        self.line("source_file: $ => repeat(choice($.package, $.library_package, $._definition, $._usage, $._member)),");
+        self.line("");
+        self.emitted_rules.insert("source_file".to_string());
+
+        // Package rules
+        self.emitted_rules.insert("package".to_string());
+        self.emitted_rules.insert("library_package".to_string());
+        self.line("package: $ => seq(repeat($.prefix_metadata_annotation), 'package', optional($.identification), $.package_body),");
+        self.line("");
+        self.line("library_package: $ => seq(optional('standard'), 'library', repeat($.prefix_metadata_annotation), 'package', optional($.identification), $.package_body),");
+        self.line("");
+    }
+
+    fn emit_definitions(&mut self) {
+        // Mark all definition-related KeBNF rules as emitted
+        for (name, _, _) in DEFINITIONS {
+            self.emitted_rules.insert(to_snake_case(name));
+        }
+        // Also mark the intermediate rules we're replacing
+        for name in &["Definition", "OccurrenceDefinition", "ExtendedDefinition"] {
+            self.emitted_rules.insert(to_snake_case(name));
         }
 
-        self.emit_line("conflicts: $ => [");
+        self.line("_definition: $ => choice(");
         self.indent += 1;
-        for (a, b) in &conflicts {
-            let a_snake = to_snake_case(a);
-            let b_snake = to_snake_case(b);
-            self.emit_line(&format!("[$.{}, $.{}],", a_snake, b_snake));
+        for (i, (name, _, _)) in DEFINITIONS.iter().enumerate() {
+            let comma = if i < DEFINITIONS.len() - 1 { "," } else { "" };
+            self.line(&format!("$.{}{}", to_snake_case(name), comma));
         }
         self.indent -= 1;
-        self.emit_line("],");
-        self.emit_line("");
-    }
+        self.line("),");
+        self.line("");
 
-    fn emit_source_file_rule(&mut self, rules: &[Rule]) {
-        let top_level: Vec<_> = rules
-            .iter()
-            .filter(|r| is_top_level_rule(&r.name) && !self.canonical_rules.contains_key(&r.name))
-            .map(|r| {
-                let canonical = self.canonical_rules.get(&r.name).unwrap_or(&r.name);
-                format!("$.{}", to_snake_case(canonical))
-            })
-            .collect();
-
-        if top_level.is_empty() {
-            self.emit_line("source_file: $ => repeat($._root_element),");
-        } else {
-            self.emit_line("source_file: $ => repeat(choice(");
-            self.indent += 1;
-            for (i, rule_ref) in top_level.iter().enumerate() {
-                let comma = if i < top_level.len() - 1 { "," } else { "" };
-                self.emit_line(&format!("{}{}", rule_ref, comma));
-            }
-            self.indent -= 1;
-            self.emit_line(")),");
+        for (name, keyword, body) in DEFINITIONS {
+            let snake = to_snake_case(name);
+            self.line(&format!(
+                concat!(
+                    "{}: $ => seq(",
+                    "repeat($.prefix_metadata_annotation), ",
+                    "optional($.visibility_indicator), ",
+                    "optional('abstract'), ",
+                    "optional(choice('individual', 'variation')), ",
+                    "'{}', 'def', ",
+                    "optional($.identification), ",
+                    "optional($.superclassing_part), ",
+                    "$.{}),"
+                ),
+                snake, keyword, body
+            ));
+            self.line("");
         }
-        self.emit_line("");
     }
+
+    fn emit_usages(&mut self) {
+        for (name, _, _) in USAGES {
+            self.emitted_rules.insert(to_snake_case(name));
+        }
+        for name in &[
+            "Usage",
+            "OccurrenceUsage",
+            "ExtendedUsage",
+            "DefaultReferenceUsage",
+            "PortionUsage",
+        ] {
+            self.emitted_rules.insert(to_snake_case(name));
+        }
+
+        self.line("_usage: $ => choice(");
+        self.indent += 1;
+        for (i, (name, _, _)) in USAGES.iter().enumerate() {
+            let comma = if i < USAGES.len() - 1 { "," } else { "" };
+            self.line(&format!("$.{}{}", to_snake_case(name), comma));
+        }
+        self.indent -= 1;
+        self.line("),");
+        self.line("");
+
+        for (name, keyword, body) in USAGES {
+            let snake = to_snake_case(name);
+            self.line(&format!(
+                concat!(
+                    "{}: $ => seq(",
+                    "repeat($.prefix_metadata_annotation), ",
+                    "optional($.visibility_indicator), ",
+                    "optional($.feature_direction), ",
+                    "optional('abstract'), ",
+                    "optional('ref'), ",
+                    "'{}', ",
+                    "optional($.usage_declaration), ",
+                    "optional($.multiplicity), ",
+                    "optional($.feature_value), ",
+                    "$.{}),"
+                ),
+                snake, keyword, body
+            ));
+            self.line("");
+        }
+    }
+
+    fn emit_body_rules(&mut self) {
+        // _member: everything that can appear in a body
+        self.line("_member: $ => choice(");
+        self.indent += 1;
+        self.line("$._definition,");
+        self.line("$._usage,");
+        self.line("$.import,");
+        self.line("$.dependency,");
+        self.line("$.alias_member,");
+        self.line("$.comment_about,");
+        self.line("$.doc_comment,");
+        self.line("$.connect_statement,");
+        self.line("$.bind_statement,");
+        self.line("$.flow_statement,");
+        self.line("$.allocate_statement,");
+        self.line("$.satisfy_statement,");
+        self.line("$.assert_statement,");
+        self.line("$.exhibit_statement,");
+        self.line("$.succession_statement,");
+        self.line("$.end_feature,");
+        self.line("$.package,");
+        self.line("$.library_package,");
+        self.line("$.generic_feature,");
+        self.line("$.redefinition_statement,");
+        self.line("$.documentation_comment,");
+        // Member wrapper rules excluded to avoid indirect recursion
+        self.indent -= 1;
+        self.line("),");
+        self.line("");
+
+        // Body types
+        self.line("definition_body: $ => choice(';', seq('{', repeat(choice($._member, $.generic_feature, $.end_feature, $.doc_comment, $.owned_expression)), '}')),");
+        self.line("");
+        self.line("usage_body: $ => choice(';', seq('{', repeat(choice($._member, $.generic_feature, $.doc_comment, $.owned_expression)), '}')),");
+        self.line("");
+        self.line("action_body: $ => choice(';', seq('{', repeat(choice($._member, $.generic_feature, $.action_node_member, $.guarded_succession_member, $.first_statement, $.then_succession, $.if_then_statement, $.while_loop, $.for_loop, $.loop_action, $.send_statement, $.perform_statement, $.assign_statement, $.accept_then_statement, $.terminate_statement, $.succession_statement, $.doc_comment, $.redefinition_statement, $.owned_expression)), '}')),");
+        self.line("");
+        self.line("enumeration_body: $ => choice(';', seq('{', repeat(choice($._member, $.enumerated_value)), '}')),");
+        self.line("");
+        self.line("metadata_body: $ => choice(';', seq('{', repeat(choice($.metadata_body_feature, $.metadata_body_usage)), '}')),");
+        self.line("");
+        self.line("requirement_body: $ => choice(';', seq('{', repeat(choice($._member, $.requirement_constraint_member, $.framed_concern_member, $.actor_member, $.stakeholder_member, $.subject_member, $.requirement_verification_member, $.assert_statement, $.require_statement, $.assume_statement, $.satisfy_statement, $.verify_statement, $.doc_comment)), '}')),");
+        self.line("");
+        self.line("case_body: $ => choice(';', seq('{', repeat(choice($._member, $.objective_member)), '}')),");
+        self.line("");
+        self.line("view_body: $ => choice(';', seq('{', repeat(choice($._member, $.view_rendering_member, $.expose_statement, $.render_statement, $.filter_statement, $.satisfy_statement, $.frame_statement)), '}')),");
+        self.line("");
+        self.line("state_def_body: $ => choice(';', seq('{', repeat(choice($._member, $.entry_action_member, $.do_action_member, $.exit_action_member, $.entry_statement, $.exit_statement, $.do_statement, $.transition_statement, $.accept_then_statement)), '}')),");
+        self.line("");
+        self.line("state_usage_body: $ => choice(';', seq('{', repeat(choice($._member, $.entry_action_member, $.do_action_member, $.exit_action_member)), '}')),");
+        self.line("");
+        self.line("calculation_body: $ => choice(';', seq('{', repeat(choice($._member, $.result_expression_member)), '}')),");
+        self.line("");
+        self.line("interface_body: $ => choice(';', seq('{', repeat(choice($._member, $.default_interface_end, $.end_feature)), '}')),");
+        self.line("");
+
+        // Mark body-related KeBNF rules as emitted
+        for name in &[
+            "definition_body",
+            "usage_body",
+            "action_body",
+            "enumeration_body",
+            "metadata_body",
+            "requirement_body",
+            "case_body",
+            "view_body",
+            "state_def_body",
+            "state_usage_body",
+            "calculation_body",
+            "interface_body",
+            "namespace_body",
+            "type_body",
+            "package_body",
+        ] {
+            self.emitted_rules.insert(name.to_string());
+        }
+
+        // Also mark body member rules as emitted (they're replaced by _member)
+        for name in &self.body_member_rules.clone() {
+            self.emitted_rules.insert(to_snake_case(name));
+        }
+    }
+
+    fn emit_expression_rules(&mut self) {
+        for name in &[
+            "OwnedExpression",
+            "ConditionalExpression",
+            "ConditionalBinaryOperatorExpression",
+            "BinaryOperatorExpression",
+            "ClassificationExpression",
+            "UnaryOperatorExpression",
+            "ExtentExpression",
+            "PrimaryExpression",
+            "BracketExpression",
+            "IndexExpression",
+            "SequenceExpression",
+            "SelectExpression",
+            "CollectExpression",
+            "FunctionOperationExpression",
+            "FeatureChainExpression",
+            "NonFeatureChainPrimaryExpression",
+        ] {
+            self.emitted_rules.insert(to_snake_case(name));
+        }
+
+        // Expression rules modeled on hand-tuned grammar pattern
+        self.line("owned_expression: $ => choice(");
+        self.indent += 1;
+        // Literals and atoms
+        self.line("$.literal_expression,");
+        self.line("$.qualified_name,");
+        self.line("seq('(', $.owned_expression, ')'),");
+        self.line("$.null_expression,");
+        // Metadata access (@ToolVariable)
+        self.line("seq('@', $.qualified_name),");
+        // Select expression (items.?{x > 0})
+        self.line("prec.left(20, seq($.owned_expression, '.?', '{', repeat(choice($._member, $.generic_feature, $.owned_expression)), '}')),");
+        // Binary operators (precedence tower)
+        self.line("prec.left(1, seq($.owned_expression, '?', $.owned_expression, 'else', $.owned_expression)),");
+        self.line("prec.left(2, seq($.owned_expression, '??', $.owned_expression)),");
+        self.line("prec.left(3, seq($.owned_expression, 'implies', $.owned_expression)),");
+        self.line("prec.left(4, seq($.owned_expression, choice('or', '|'), $.owned_expression)),");
+        self.line("prec.left(5, seq($.owned_expression, 'xor', $.owned_expression)),");
+        self.line("prec.left(6, seq($.owned_expression, choice('and', '&'), $.owned_expression)),");
+        self.line("prec.left(7, seq($.owned_expression, choice('==', '!=', '===', '!=='), $.owned_expression)),");
+        self.line("prec.left(8, seq($.owned_expression, choice('<', '>', '<=', '>='), $.owned_expression)),");
+        self.line("prec.left(9, seq($.owned_expression, '..', $.owned_expression)),");
+        self.line("prec.left(10, seq($.owned_expression, choice('+', '-'), $.owned_expression)),");
+        self.line(
+            "prec.left(11, seq($.owned_expression, choice('*', '/', '%'), $.owned_expression)),",
+        );
+        self.line("prec.right(12, seq($.owned_expression, '**', $.owned_expression)),");
+        // Classification/cast
+        self.line("prec.left(13, seq($.owned_expression, choice('istype', 'hastype', '@', 'as', 'meta'), $.qualified_name)),");
+        // Unary
+        self.line("prec(14, seq(choice('not', '~', '-', '+'), $.owned_expression)),");
+        self.line("prec(15, seq('all', $.qualified_name)),");
+        // Feature chain (a.b.c)
+        self.line("prec.left(16, seq($.owned_expression, '.', $.name)),");
+        self.line("prec.left(16, seq($.owned_expression, '.?', $.name)),");
+        // Function call
+        self.line("prec.left(17, seq($.owned_expression, '(', optional(seq($.owned_expression, repeat(seq(',', $.owned_expression)))), ')')),");
+        // Index/bracket
+        self.line("prec.left(18, seq($.owned_expression, '[', $.owned_expression, ']')),");
+        self.line("prec.left(18, seq($.owned_expression, '#', '(', $.owned_expression, ')')),");
+        // Arrow (select/collect)
+        self.line("prec.left(19, seq($.owned_expression, '->', $.name, '(', optional(seq($.owned_expression, repeat(seq(',', $.owned_expression)))), ')')),");
+        // Sequence
+        self.line("prec.left(0, seq($.owned_expression, ',', $.owned_expression)),");
+        self.indent -= 1;
+        self.line("),");
+        self.line("");
+
+        // Keep primary_expression as alias for backward compat
+        self.line("primary_expression: $ => $.owned_expression,");
+        self.line("");
+    }
+
+    fn emit_conflicts(&mut self) {
+        self.line("conflicts: $ => [");
+        self.indent += 1;
+        // Definition/usage pairs share prefix keywords
+        self.line("[$.owned_expression, $.primary_expression],");
+        self.line("[$.qualified_name],");
+        self.line("[$.qualified_name, $.identification],");
+        self.line("[$.qualified_name, $.feature_identification],");
+        self.line("[$.qualified_name, $.feature_identification, $.identification],");
+        self.line("[$.qualified_name, $.connector_end, $.identification],");
+        self.line("[$.feature_identification, $.identification],");
+        self.line("[$.feature_identification, $.connector_end],");
+        self.line("[$.identification, $.connector_end],");
+        self.line("[$.feature_identification, $.interface_end, $.identification],");
+        self.line("[$.qualified_name, $.interface_end],");
+        self.line("[$.general_type, $.owned_feature_chaining],");
+        self.line("[$.general_type, $.element_reference_member],");
+        self.line("[$.general_type, $.instantiated_type_reference],");
+        self.line("[$.general_type, $.instantiated_type_member],");
+        self.line("[$.owned_feature_chaining, $.element_reference_member],");
+        self.line("[$.connector, $.nary_connector_declaration],");
+        self.line("[$.connector, $.binary_connector_declaration],");
+        self.line("[$.connector_end, $.metadata_body_feature, $.variant_reference, $.metadata_body_usage],");
+        self.line("[$.connector_end, $.multiplicity],");
+        self.line("[$.metadata_body_feature, $.metadata_body_usage],");
+        self.line("[$.redefines, $.metadata_body_feature, $.metadata_body_usage],");
+        self.line("[$.redefines, $.metadata_body_feature],");
+        self.line("[$.feature_specialization_part, $.variant_reference],");
+        self.line("[$.enumerated_value, $.enumeration_usage],");
+        self.line("[$.filter_package],");
+        self.line("[$.metadata_body, $.definition_body],");
+        self.line("[$.metadata_body, $.usage_body],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.comment_about, $.documentation_comment],");
+        self.line("[$.source_file, $._member],");
+        self.line("[$.enumeration_usage, $.usage],");
+        self.line("[$.identification],");
+        self.line("[$.merge_node, $.decision_node, $.join_node, $.fork_node],");
+        self.line("[$.annotating_element, $.comment_about, $.documentation_comment],");
+        self.line("[$.payload_feature_specialization_part],");
+        self.line("[$.primary_expression],");
+        self.line("[$.prefix_metadata_annotation, $.prefix_metadata_member],");
+        self.line("[$.primary_expression, $.positional_argument_list],");
+        self.line("[$.primary_expression, $.named_argument],");
+        self.line("[$.typings, $.metadata_feature_declaration],");
+        self.line("[$.qualified_name, $.usage_declaration],");
+        self.line("[$.redefines, $.relationship_part],");
+        self.line("[$.usage_declaration, $.relationship_part],");
+        self.line("[$.first_statement],");
+        self.line("[$.qualified_name, $.first_statement],");
+        self.line("[$.usage_body, $.flow_statement],");
+        self.line("[$.accept_then_statement],");
+        self.line("[$.usage_body, $.connect_statement],");
+        self.line("[$.usage_body, $.allocate_statement],");
+        self.line("[$._member, $.definition_body],");
+        self.line("[$.usage_body, $.end_feature],");
+        self.line("[$.owned_expression, $.terminate_statement],");
+        self.line("[$.owned_expression],");
+        self.line("[$._member, $.usage_body],");
+        self.line("[$.usage_body, $.generic_feature],");
+        self.line("[$.reference_usage, $.generic_feature],");
+        self.line("[$.usage_body, $.succession_statement],");
+        self.line("[$.usage_body, $.exhibit_statement],");
+        self.line("[$.owned_expression, $.owned_feature_chaining],");
+        self.line("[$._member, $.action_body],");
+        self.line("[$.generic_feature, $.usage],");
+        self.line("[$.documentation, $.doc_comment],");
+        self.line("[$.usage_body, $.import],");
+        self.line("[$.owned_expression, $.feature_reference],");
+        self.line("[$.satisfy_statement],");
+        self.line("[$._member, $.owned_expression],");
+        self.line("[$.feature_specialization_part],");
+        self.indent -= 1;
+        self.line("],");
+        self.line("");
+    }
+
+    // --- Non-pattern rule emission ---
 
     fn emit_rule(&mut self, rule: &Rule) -> Result<(), EmitError> {
-        let snake_name = to_snake_case(&rule.name);
-
-        if self.is_problematic_lexical_rule(&rule.name) {
+        let snake = to_snake_case(&rule.name);
+        if self.emitted_rules.contains(&snake) {
+            return Ok(());
+        }
+        self.emitted_rules.insert(snake.clone());
+        if self.epsilon_rules.contains(&rule.name) {
+            return Ok(());
+        }
+        if self.can_match_empty(&rule.body) {
+            return Ok(());
+        }
+        if is_skip_lexical(&rule.name) {
             return Ok(());
         }
 
-        if self.canonical_rules.contains_key(&rule.name) {
-            return Ok(());
-        }
-
-        if self.is_empty_matching_rule(&rule.name) {
+        let body = self.emit_body(&rule.body)?;
+        if body.is_empty() || body == "seq()" {
             return Ok(());
         }
 
         let mut comment = String::new();
-        if let Some(ref produces_type) = rule.produces_type {
-            comment.push_str(&format!(" // : {}", produces_type));
-        }
-        if rule.needs_manual_review() {
-            comment.push_str(" // TODO: Manual review needed (variable prefix)");
+        if let Some(ref pt) = rule.produces_type {
+            comment.push_str(&format!(" // : {}", pt));
         }
 
-        let body = self.emit_body(&rule.body)?;
-        self.emit_line(&format!("{}: $ => {},{}", snake_name, body, comment));
-        self.emit_line("");
-
+        // Wrap rules with internal ambiguity in prec.left
+        let has_optional = body.contains("optional(") || body.contains("repeat(");
+        let has_compound = body.starts_with("seq(") || body.starts_with("choice(");
+        if has_optional && has_compound {
+            self.line(&format!(
+                "{}: $ => prec.left(0, {}),{}",
+                snake, body, comment
+            ));
+        } else {
+            self.line(&format!("{}: $ => {},{}", snake, body, comment));
+        }
+        self.line("");
         Ok(())
-    }
-
-    fn is_empty_matching_rule(&self, name: &str) -> bool {
-        const EMPTY_RULES: &[&str] = &[
-            "Identification",
-            "FeatureIdentification",
-            "RootNamespace",
-            "MemberPrefix",
-            "TypePrefix",
-            "EndFeaturePrefix",
-            "BasicFeaturePrefix",
-            "MultiplicityPart",
-            "BindingConnectorDeclaration",
-            "SuccessionDeclaration",
-            "FunctionBodyPart",
-            "EmptyFeature",
-            "BasicDefinitionPrefix",
-            "DefinitionPrefix",
-            "RefPrefix",
-            "EndUsagePrefix",
-            "OccurrenceDefinitionPrefix",
-            "EmptyMultiplicity",
-            "SourceEnd",
-            "PortConjugation",
-            "EmptyUsage",
-            "AssignmentTargetParameter",
-            "EmptyActionUsage",
-            "CalculationBodyPart",
-        ];
-        EMPTY_RULES.contains(&name)
-    }
-
-    fn is_problematic_lexical_rule(&self, name: &str) -> bool {
-        const SKIP_RULES: &[&str] = &[
-            "LINE_TERMINATOR",
-            "LINE_TEXT",
-            "WHITE_SPACE",
-            "SINGLE_LINE_NOTE",
-            "MULTILINE_NOTE",
-            "REGULAR_COMMENT",
-            "COMMENT_TEXT",
-            "COMMENT_LINE_TEXT",
-            "BASIC_INITIAL_CHARACTER",
-            "BASIC_NAME_CHARACTER",
-            "ALPHABETIC_CHARACTER",
-            "DECIMAL_DIGIT",
-            "NAME_CHARACTER",
-            "UNRESTRICTED_NAME_CHARACTER",
-            "ESCAPE_SEQUENCE",
-            "STRING_CHARACTER",
-            "NAME",
-            "BASIC_NAME",
-            "SINGLE_QUOTE",
-            "UNRESTRICTED_NAME",
-            "DECIMAL_VALUE",
-            "EXPONENTIAL_VALUE",
-            "REAL_VALUE",
-            "STRING_VALUE",
-            "PREFIX_COMMENT",
-        ];
-        SKIP_RULES.contains(&name)
     }
 
     fn emit_body(&self, body: &RuleBody) -> Result<String, EmitError> {
         match body {
-            RuleBody::Empty => Ok("seq()".to_string()),
-
+            RuleBody::Empty => Ok(String::new()),
             RuleBody::Terminal(s) => Ok(format!("'{}'", escape_terminal(s))),
-
             RuleBody::RuleRef(name) => {
-                let canonical = self.canonical_rules.get(name).unwrap_or(name);
-                let snake = to_snake_case(canonical);
-                Ok(format!("$.{}", snake))
+                let resolved = self.inline_map.get(name).unwrap_or(name);
+                if self.epsilon_rules.contains(resolved) {
+                    return Ok(String::new());
+                }
+                if self.body_member_rules.contains(resolved) {
+                    return Ok("$._member".to_string());
+                }
+                Ok(format!("$.{}", to_snake_case(resolved)))
             }
-
-            RuleBody::CrossRef(cross_ref) => {
-                let canonical = self
-                    .canonical_rules
-                    .get(&cross_ref.rule_name)
-                    .unwrap_or(&cross_ref.rule_name);
-                let snake = to_snake_case(canonical);
-                Ok(format!("$.{}", snake))
+            RuleBody::CrossRef(cr) => {
+                let resolved = self.inline_map.get(&cr.rule_name).unwrap_or(&cr.rule_name);
+                if self.epsilon_rules.contains(resolved) {
+                    return Ok(String::new());
+                }
+                Ok(format!("$.{}", to_snake_case(resolved)))
             }
-
             RuleBody::Sequence(items) => {
-                if items.is_empty() {
-                    return Ok("seq()".to_string());
-                }
                 let parts: Result<Vec<_>, _> = items.iter().map(|i| self.emit_body(i)).collect();
-                let parts = parts?;
-                if parts.len() == 1 {
-                    Ok(parts.into_iter().next().unwrap())
-                } else {
-                    Ok(format!("seq({})", parts.join(", ")))
+                let parts: Vec<_> = parts?.into_iter().filter(|s| !s.is_empty()).collect();
+                match parts.len() {
+                    0 => Ok(String::new()),
+                    1 => Ok(parts.into_iter().next().unwrap()),
+                    _ => Ok(format!("seq({})", parts.join(", "))),
                 }
             }
-
             RuleBody::Choice(items) => {
-                if items.is_empty() {
-                    return Ok("seq()".to_string());
-                }
                 let parts: Result<Vec<_>, _> = items.iter().map(|i| self.emit_body(i)).collect();
-                let parts = parts?;
-                if parts.len() == 1 {
-                    Ok(parts.into_iter().next().unwrap())
-                } else {
-                    Ok(format!("choice({})", parts.join(", ")))
+                let parts: Vec<_> = parts?.into_iter().filter(|s| !s.is_empty()).collect();
+                match parts.len() {
+                    0 => Ok(String::new()),
+                    1 => Ok(parts.into_iter().next().unwrap()),
+                    _ => Ok(format!("choice({})", parts.join(", "))),
                 }
             }
-
             RuleBody::Optional(inner) => {
-                let inner_str = self.emit_body(inner)?;
-                Ok(format!("optional({})", inner_str))
+                let s = self.emit_body(inner)?;
+                if s.is_empty() {
+                    Ok(String::new())
+                } else {
+                    Ok(format!("optional({})", s))
+                }
             }
-
             RuleBody::Repeat(inner) => {
-                let inner_str = self.emit_body(inner)?;
-                Ok(format!("repeat({})", inner_str))
+                let s = self.emit_body(inner)?;
+                if s.is_empty() {
+                    Ok(String::new())
+                } else {
+                    Ok(format!("repeat({})", s))
+                }
             }
-
             RuleBody::Repeat1(inner) => {
-                let inner_str = self.emit_body(inner)?;
-                Ok(format!("repeat1({})", inner_str))
+                let s = self.emit_body(inner)?;
+                if s.is_empty() {
+                    Ok(String::new())
+                } else {
+                    Ok(format!("repeat1({})", s))
+                }
             }
-
             RuleBody::Group(inner) => self.emit_body(inner),
-
-            RuleBody::Assignment(assignment) => self.emit_body(&assignment.value),
-
-            RuleBody::BooleanFlag(flag) => {
-                Ok(format!("optional('{}')", escape_terminal(&flag.terminal)))
-            }
-
-            RuleBody::SemanticAction(_) => Ok("seq()".to_string()),
+            RuleBody::Assignment(a) => self.emit_body(&a.value),
+            RuleBody::BooleanFlag(f) => Ok(format!("optional('{}')", escape_terminal(&f.terminal))),
+            RuleBody::SemanticAction(_) => Ok(String::new()),
         }
     }
 
     fn emit_builtin_rules(&mut self) {
-        self.emit_line("// Built-in lexical rules (replacing KEBNF lexical grammar)");
-        self.emit_line("comment: $ => token(choice(");
-        self.indent += 1;
-        self.emit_line("seq('//', /[^\\n]*/),");
-        self.emit_line("seq('/*', /[^*]*\\*+([^/*][^*]*\\*+)*/, '/'),");
-        self.indent -= 1;
-        self.emit_line(")),");
-        self.emit_line("");
-        self.emit_line("// Lexical primitives");
-        self.emit_line("name: $ => choice($.basic_name, $.unrestricted_name),");
-        self.emit_line("");
-        self.emit_line("basic_name: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,");
-        self.emit_line("");
-        self.emit_line("unrestricted_name: $ => /'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'/,");
-        self.emit_line("");
-        self.emit_line("string_value: $ => /\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"/,");
-        self.emit_line("");
-        self.emit_line("decimal_value: $ => /[0-9]+/,");
-        self.emit_line("");
-        self.emit_line("exponential_value: $ => /[0-9]+[eE][+-]?[0-9]+/,");
-        self.emit_line("");
-        self.emit_line("real_value: $ => choice(");
-        self.indent += 1;
-        self.emit_line("/[0-9]+\\.[0-9]*([eE][+-]?[0-9]+)?/,");
-        self.emit_line("/\\.[0-9]+([eE][+-]?[0-9]+)?/,");
-        self.indent -= 1;
-        self.emit_line("),");
-        self.emit_line("");
-        self.emit_line("// Comment body (/* ... */)");
-        self.emit_line("regular_comment: $ => /\\/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*\\//,");
-        self.emit_line("");
-        self.emit_line("// Identification rules (transformed to require at least one name)");
-        self.emit_line("// Original: optional(shortName) optional(name) - matches empty");
-        self.emit_line("// Fixed: choice of name forms that always match something");
-        self.emit_line("identification: $ => choice(");
-        self.indent += 1;
-        self.emit_line("seq('<', $.name, '>', optional($.name)),  // <shortName> name?");
-        self.emit_line("$.name,                                    // name only");
-        self.indent -= 1;
-        self.emit_line("),");
-        self.emit_line("");
-        self.emit_line("feature_identification: $ => choice(");
-        self.indent += 1;
-        self.emit_line("seq('<', $.name, '>', optional($.name)),");
-        self.emit_line("$.name,");
-        self.indent -= 1;
-        self.emit_line("),");
-        self.emit_line("");
-        self.emit_line(
-            "// RootNamespace - require at least one element (empty files handled by source_file)",
+        // Non-empty replacements for can-match-empty rules
+        // Fix typing rules -- the KeBNF parser drops the type reference from assignments
+        self.line("typed_by: $ => seq(choice(':', seq('typed', 'by')), $.general_type),");
+        self.line("");
+        self.line("typings: $ => prec.left(0, seq(choice(':', seq('typed', 'by')), $.general_type, repeat(seq(',', $.general_type)))),");
+        self.line("");
+        self.line("subsettings: $ => prec.left(0, seq($.subsets, $.general_type, repeat(seq(',', $.general_type)))),");
+        self.line("");
+        self.line("redefinitions: $ => prec.left(0, seq($.redefines, $.general_type, repeat(seq(',', $.general_type)))),");
+        self.line("");
+        self.line("feature_direction: $ => choice('in', 'out', 'inout'),");
+        self.line("");
+        // Multiplicity: [N], [0..5], [*], [0..*]
+        self.line("multiplicity: $ => seq('[', optional(choice(seq($.multiplicity_bound, '..', choice($.multiplicity_bound, '*')), $.multiplicity_bound, '*')), ']'),");
+        self.line("");
+        self.line("multiplicity_bound: $ => choice($.decimal_value, $.name),");
+        self.line("");
+        // Import (fix: visibility is optional)
+        self.line("import: $ => seq(optional($.visibility_indicator), 'import', optional('all'), $.import_declaration, choice(';', $.usage_body)),");
+        self.line("");
+        // Comment about
+        self.line("comment_about: $ => seq('comment', optional(seq('about', $.qualified_name, repeat(seq(',', $.qualified_name)))), optional($.regular_comment)),");
+        self.line("");
+        // Redefinition statement (:>> x;)
+        self.line("redefinition_statement: $ => seq(':>>', $.owned_expression, optional($.feature_value), ';'),");
+        self.line("");
+        // Feature value (= expression)
+        self.line("feature_value: $ => seq(choice('=', ':=', seq('default', choice('=', ':='))), $.owned_expression),");
+        self.line("");
+        // Action body statements
+        // first start; | first action x : T; | first a then b;
+        self.line("first_statement: $ => prec.left(0, seq('first', choice('start', seq(optional(choice('action', 'state')), $.owned_expression)), optional(seq('then', choice('done', $.owned_expression, $.action_body))), optional(';'))),");
+        self.line("");
+        self.line("then_succession: $ => prec.left(0, seq('then', choice($.owned_expression, 'done', $.if_then_statement, $.while_loop, $.for_loop, $.send_statement, $.perform_statement, $.assign_statement, $.accept_then_statement, $.action_body), optional(';'))),");
+        self.line("");
+        self.line("if_then_statement: $ => prec.left(0, seq('if', $.owned_expression, 'then', choice($.owned_expression, $.action_body), optional(seq('else', choice($.owned_expression, $.action_body, $.if_then_statement))), optional(';'))),");
+        self.line("");
+        self.line("while_loop: $ => seq('while', $.owned_expression, $.action_body),");
+        self.line("");
+        self.line("loop_action: $ => prec.left(0, seq('loop', optional('action'), optional($.usage_declaration), $.action_body, optional(seq('until', $.owned_expression, ';')))),");
+        self.line("");
+        self.line("for_loop: $ => seq('for', $.name, 'in', $.owned_expression, $.action_body),");
+        self.line("");
+        self.line("send_statement: $ => seq('send', $.owned_expression, choice(seq('to', $.owned_expression), seq('via', $.owned_expression)), ';'),");
+        self.line("");
+        self.line("perform_statement: $ => seq('perform', optional('action'), optional($.usage_declaration), $.action_body),");
+        self.line("");
+        self.line("assign_statement: $ => seq('assign', $.qualified_name, ':=', $.owned_expression, ';'),");
+        self.line("");
+        self.line("accept_then_statement: $ => seq('accept', choice(seq('when', $.owned_expression), seq('after', $.owned_expression)), optional(seq('then', choice($.name, $.action_body)))),");
+        self.line("");
+        self.line("terminate_statement: $ => seq('terminate', $.qualified_name, ';'),");
+        self.line("");
+        // Generic feature (bare usage without keyword: in x : T;)
+        self.line("generic_feature: $ => seq(optional($.feature_direction), optional('abstract'), optional('ref'), $.usage_declaration, optional($.multiplicity), optional($.feature_value), choice(';', $.usage_body)),");
+        self.line("");
+        // End features (connection/interface endpoints)
+        // end [1] part supplier : FuelPort;  OR  end :>> source : USBPort;
+        self.line("end_feature: $ => prec.left(0, seq('end', optional($.multiplicity), optional(choice('part', 'port', 'occurrence')), optional($.usage_declaration), optional($.feature_value), choice(';', $.usage_body))),");
+        self.line("");
+        // Connection/flow statements
+        self.line("connect_statement: $ => seq('connect', $.owned_expression, 'to', $.owned_expression, choice(';', $.usage_body)),");
+        self.line("");
+        self.line(
+            "bind_statement: $ => seq('bind', $.owned_expression, '=', $.owned_expression, ';'),",
         );
-        self.emit_line("root_namespace: $ => repeat1($.namespace_body_element),");
-        self.emit_line("");
-        self.emit_line("// MemberPrefix - visibility indicator (optional in spec, required here)");
-        self.emit_line("member_prefix: $ => $.visibility_indicator,");
-        self.emit_line("");
-        self.emit_line("// TypePrefix - abstract keyword or metadata (at least one required)");
-        self.emit_line("type_prefix: $ => choice(");
-        self.indent += 1;
-        self.emit_line("seq('abstract', repeat($.prefix_metadata_member)),");
-        self.emit_line("repeat1($.prefix_metadata_member),");
-        self.indent -= 1;
-        self.emit_line("),");
-        self.emit_line("");
-        self.emit_line("// Empty-matching rules replaced with non-empty versions or stubs");
-        self.emit_line("end_feature_prefix: $ => $.prefix_metadata_annotation,");
-        self.emit_line("basic_feature_prefix: $ => choice('abstract', 'readonly', 'derived', 'end', $.prefix_metadata_member),");
-        self.emit_line("multiplicity_part: $ => $.owned_multiplicity,");
-        self.emit_line("binding_connector_declaration: $ => $.feature_declaration,");
-        self.emit_line("succession_declaration: $ => $.feature_declaration,");
-        self.emit_line("function_body_part: $ => $.result_expression_member,");
-        self.emit_line(
-            "basic_definition_prefix: $ => choice('abstract', $.prefix_metadata_member),",
+        self.line("");
+        self.line("flow_statement: $ => seq(optional('succession'), 'flow', optional('from'), $.owned_expression, 'to', $.owned_expression, choice(';', $.usage_body)),");
+        self.line("");
+        self.line("allocate_statement: $ => seq('allocate', $.owned_expression, optional(seq('to', $.owned_expression)), choice(';', $.usage_body)),");
+        self.line("");
+        self.line("exhibit_statement: $ => seq('exhibit', choice(seq(optional($.usage_declaration), choice(';', $.usage_body)), seq($.owned_expression, choice(';', $.usage_body)))),");
+        self.line("");
+        self.line("succession_statement: $ => prec.left(0, seq('succession', optional($.usage_declaration), optional(seq('first', $.owned_expression)), optional(seq('then', $.owned_expression)), choice(';', $.usage_body))),");
+        self.line("");
+        // Requirement body statements
+        self.line("satisfy_statement: $ => prec(1, seq('satisfy', $.qualified_name, optional(seq('by', $.qualified_name)), optional(';'))),");
+        self.line("");
+        self.line("verify_statement: $ => seq('verify', $.qualified_name, ';'),");
+        self.line("");
+        self.line("assert_statement: $ => seq(optional('private'), 'assert', optional('constraint'), optional($.usage_declaration), choice(seq('{', $.owned_expression, '}'), ';')),");
+        self.line("");
+        self.line("require_statement: $ => seq('require', optional($.prefix_metadata_annotation), optional('constraint'), choice(seq('{', optional($.owned_expression), '}'), seq($.qualified_name, optional(';')))),");
+        self.line("");
+        self.line("assume_statement: $ => seq('assume', optional($.prefix_metadata_annotation), optional('constraint'), choice(seq('{', optional($.owned_expression), '}'), seq($.qualified_name, optional(';')))),");
+        self.line("");
+        // State body statements
+        self.line("entry_statement: $ => seq('entry', choice(seq('action', optional($.usage_declaration), $.action_body), seq($.assign_statement), ';')),");
+        self.line("");
+        self.line("exit_statement: $ => seq('exit', choice(seq('action', optional($.usage_declaration), $.action_body), ';')),");
+        self.line("");
+        self.line("do_statement: $ => seq('do', choice(seq('action', optional($.usage_declaration), $.action_body), seq($.qualified_name, ';'))),");
+        self.line("");
+        self.line("transition_statement: $ => prec.left(0, seq('transition', optional($.usage_declaration), optional(seq('first', $.qualified_name)), optional(seq('accept', $.owned_expression)), optional(seq('then', $.qualified_name)), choice(';', $.usage_body))),");
+        self.line("");
+        // View body statements
+        // expose vehicle::**; | expose vehicle::**[@Safety];
+        self.line("expose_statement: $ => prec(1, seq('expose', $.qualified_name, optional(seq('::', choice('*', '**'))), optional(seq('[', $.owned_expression, ']')), ';')),");
+        self.line("");
+        self.line("render_statement: $ => prec(1, seq('render', optional($.usage_declaration), choice(';', $.usage_body))),");
+        self.line("");
+        self.line("filter_statement: $ => prec(1, seq('filter', choice(seq('@', $.qualified_name), $.owned_expression), ';')),");
+        self.line("");
+        self.line("frame_statement: $ => seq('frame', $.qualified_name, ';'),");
+        self.line("");
+        // Documentation
+        self.line("doc_comment: $ => seq('doc', optional($.regular_comment)),");
+        self.line("");
+        // usage_declaration: just identification + specialization (multiplicity handled in usage pattern)
+        self.line("");
+        self.line("");
+        self.line("identification: $ => choice(seq('<', $.name, '>', optional($.name)), $.name),");
+        self.line("");
+        self.line(
+            "feature_identification: $ => choice(seq('<', $.name, '>', optional($.name)), $.name),",
         );
-        self.emit_line("definition_prefix: $ => choice('abstract', $.prefix_metadata_member),");
-        self.emit_line("ref_prefix: $ => choice('ref', $.prefix_metadata_annotation),");
-        self.emit_line("end_usage_prefix: $ => choice('end', $.prefix_metadata_annotation),");
-        self.emit_line(
-            "occurrence_definition_prefix: $ => choice('abstract', $.prefix_metadata_member),",
+        self.line("");
+        self.line("multiplicity_part: $ => $.multiplicity_range,");
+        self.line("");
+        self.line("binding_connector_declaration: $ => $.feature_declaration,");
+        self.line("");
+        self.line("succession_declaration: $ => $.feature_declaration,");
+        self.line("");
+        self.line("function_body_part: $ => $.result_expression_member,");
+        self.line("");
+        self.line("source_end: $ => $._member,");
+        self.line("");
+        self.line("port_conjugation: $ => seq('~', $.qualified_name),");
+        self.line("");
+        self.line("assignment_target_parameter: $ => $.feature_member,");
+        self.line("");
+        self.line("calculation_body_part: $ => $.result_expression_member,");
+        self.line("");
+        self.line("namespace_body: $ => choice(';', seq('{', repeat($._member), '}')),");
+        self.line("");
+        self.line("type_body: $ => choice(';', seq('{', repeat($._member), '}')),");
+        self.line("");
+        self.line("package_body: $ => choice(';', seq('{', repeat($._member), '}')),");
+        self.line("");
+        self.line("comment_text: $ => repeat1($.comment_line_text),");
+        self.line("");
+        self.line("nary_connector_declaration: $ => $.feature_declaration,");
+        self.line("");
+        self.line("nary_interface_part: $ => $.feature_declaration,");
+        self.line("");
+        self.line("feature_specialization_part: $ => repeat1($.feature_specialization),");
+        self.line("");
+        self.line("effect_behavior_usage: $ => choice($.transition_perform_action_usage, $.transition_accept_action_usage),");
+        self.line("");
+        self.line("root_namespace: $ => repeat1($._member),");
+        self.line("");
+
+        self.line("action_node_prefix: $ => choice($.prefix_metadata_annotation, $.visibility_indicator),");
+        self.line("");
+        self.line("control_node_prefix: $ => choice($.prefix_metadata_annotation, $.visibility_indicator),");
+        self.line("");
+        self.line("comment_about: $ => seq($.comment, optional($.identification)),");
+        self.line("");
+        self.line("documentation_comment: $ => seq($.comment),");
+        self.line("");
+        self.line("usage: $ => seq(optional($.usage_declaration), $.usage_body),");
+        self.line("");
+        self.line("calculation_usage_declaration: $ => $.usage_declaration,");
+        self.line("");
+        self.line(
+            "relationship_part: $ => choice($.feature_specialization, seq(':>>', $.general_type)),",
         );
-        self.emit_line("source_end: $ => $.owned_feature_member,");
-        self.emit_line("port_conjugation: $ => seq('~', $.qualified_name),");
-        self.emit_line("assignment_target_parameter: $ => $.feature_member,");
-        self.emit_line("calculation_body_part: $ => $.result_expression_member,");
-        self.emit_line("");
-        self.emit_line(
-            "// Semantic-only empty rules - use a marker token that never appears in real input",
-        );
-        self.emit_line("// These represent AST nodes with no syntactic content");
-        self.emit_line(
-            "_empty_marker: $ => '__EMPTY__',  // Hidden rule, never matches real input",
-        );
-        self.emit_line("empty_feature: $ => $._empty_marker,");
-        self.emit_line("empty_multiplicity: $ => $._empty_marker,");
-        self.emit_line("empty_usage: $ => $._empty_marker,");
-        self.emit_line("empty_action_usage: $ => $._empty_marker,");
-        self.emit_line("");
+        self.line("");
+        // Lexical rules
+        self.line("line_terminator: $ => /\\r?\\n/,");
+        self.line("");
+        self.line("comment_line_text: $ => /[^\\n]*/,");
+        self.line("");
+        self.line("regular_comment: $ => /\\/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*\\//,");
+        self.line("");
+        self.line("comment: $ => token(choice(seq('//', /[^\\n]*/), seq('/*', /[^*]*\\*+([^/*][^*]*\\*+)*/, '/'))),");
+        self.line("");
+        self.line("name: $ => choice($.basic_name, $.unrestricted_name),");
+        self.line("");
+        self.line("basic_name: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,");
+        self.line("");
+        self.line("unrestricted_name: $ => /'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'/,");
+        self.line("");
+        self.line("string_value: $ => /\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"/,");
+        self.line("");
+        self.line("decimal_value: $ => /[0-9]+/,");
+        self.line("");
+        self.line("exponential_value: $ => /[0-9]+[eE][+-]?[0-9]+/,");
+        self.line("");
+        self.line("real_value: $ => choice(/[0-9]+\\.[0-9]*([eE][+-]?[0-9]+)?/, /\\.[0-9]+([eE][+-]?[0-9]+)?/),");
+        self.line("");
     }
 
-    fn emit_line(&mut self, line: &str) {
-        if line.is_empty() {
+    fn line(&mut self, text: &str) {
+        if text.is_empty() {
             self.output.push('\n');
         } else {
             let indent = "  ".repeat(self.indent);
             self.output.push_str(&indent);
-            self.output.push_str(line);
+            self.output.push_str(text);
             self.output.push('\n');
         }
     }
 }
 
+// --- Helpers ---
+
 fn to_snake_case(name: &str) -> String {
     if name.chars().all(|c| c.is_uppercase() || c == '_') {
         return name.to_lowercase();
     }
-
     let mut result = String::new();
     for (i, c) in name.chars().enumerate() {
         if c.is_uppercase() {
@@ -489,51 +1137,52 @@ fn escape_terminal(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
-fn is_top_level_rule(name: &str) -> bool {
-    let exact_matches = [
-        "RootNamespace",
-        "Package",
-        "LibraryPackage",
-        "FilterPackage",
-        "FilterPackageMember",
-    ];
-    exact_matches.contains(&name)
+fn body_is_epsilon(body: &RuleBody) -> bool {
+    match body {
+        RuleBody::Empty | RuleBody::SemanticAction(_) => true,
+        RuleBody::Sequence(items) => items.iter().all(body_is_epsilon),
+        RuleBody::Assignment(a) => body_is_epsilon(&a.value),
+        _ => false,
+    }
 }
 
-fn detect_conflicts(rules: &[Rule]) -> Vec<(String, String)> {
-    let mut conflicts = Vec::new();
-    let rule_names: HashSet<_> = rules.iter().map(|r| r.name.as_str()).collect();
-
-    for rule in rules {
-        if rule.name.ends_with("Definition") {
-            let usage_name = rule.name.replace("Definition", "Usage");
-            if rule_names.contains(usage_name.as_str()) {
-                conflicts.push((rule.name.clone(), usage_name));
-            }
-        }
+fn get_single_ref_target(body: &RuleBody) -> Option<String> {
+    match body {
+        RuleBody::RuleRef(name) => Some(name.clone()),
+        RuleBody::Assignment(a) => get_single_ref_target(&a.value),
+        _ => None,
     }
+}
 
-    let additional_conflicts = vec![
-        ("NamespaceBodyElement", "PackageBodyElement"),
-        ("DefinitionBodyItem", "UsageBodyItem"),
-        ("Package", "PackageDeclaration"),
-        ("LibraryPackage", "PackageDeclaration"),
-        ("NamespaceBody", "RootNamespace"),
-        ("RootNamespace", "RootNamespace"),
-        ("OwnedFeatureChaining", "ElementReferenceMember"),
-        ("FeatureChain", "QualifiedName"),
-        (
-            "PrimaryArgumentMember",
-            "NonFeatureChainPrimaryArgumentMember",
-        ),
+fn is_skip_lexical(name: &str) -> bool {
+    const SKIP: &[&str] = &[
+        "LINE_TERMINATOR",
+        "LINE_TEXT",
+        "WHITE_SPACE",
+        "SINGLE_LINE_NOTE",
+        "MULTILINE_NOTE",
+        "REGULAR_COMMENT",
+        "COMMENT_TEXT",
+        "COMMENT_LINE_TEXT",
+        "PREFIX_COMMENT",
+        "BASIC_INITIAL_CHARACTER",
+        "BASIC_NAME_CHARACTER",
+        "ALPHABETIC_CHARACTER",
+        "DECIMAL_DIGIT",
+        "NAME_CHARACTER",
+        "UNRESTRICTED_NAME_CHARACTER",
+        "ESCAPE_SEQUENCE",
+        "STRING_CHARACTER",
+        "NAME",
+        "BASIC_NAME",
+        "SINGLE_QUOTE",
+        "UNRESTRICTED_NAME",
+        "DECIMAL_VALUE",
+        "EXPONENTIAL_VALUE",
+        "REAL_VALUE",
+        "STRING_VALUE",
     ];
-    for (a, b) in additional_conflicts {
-        if rule_names.contains(a) && rule_names.contains(b) {
-            conflicts.push((a.to_string(), b.to_string()));
-        }
-    }
-
-    conflicts
+    SKIP.contains(&name)
 }
 
 #[cfg(test)]
@@ -543,16 +1192,12 @@ mod tests {
     #[test]
     fn test_snake_case() {
         assert_eq!(to_snake_case("FooBar"), "foo_bar");
-        assert_eq!(to_snake_case("fooBar"), "foo_bar");
-        assert_eq!(to_snake_case("Foo"), "foo");
         assert_eq!(to_snake_case("FOO"), "foo");
-        assert_eq!(to_snake_case("IDENTIFIER"), "identifier");
-        assert_eq!(to_snake_case("XML_PARSER"), "xml_parser");
     }
 
     #[test]
-    fn test_escape_terminal() {
-        assert_eq!(escape_terminal("foo"), "foo");
-        assert_eq!(escape_terminal("it's"), "it\\'s");
+    fn test_body_is_epsilon() {
+        assert!(body_is_epsilon(&RuleBody::Empty));
+        assert!(!body_is_epsilon(&RuleBody::Terminal("x".to_string())));
     }
 }

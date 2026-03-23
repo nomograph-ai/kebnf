@@ -13,7 +13,7 @@ output with semantic traceability.
 | Format | Flag | Output | Status |
 |--------|------|--------|--------|
 | **ANTLR4** | `--format antlr4` | `.g4` | **CI-validated** -- compiles with antlr4 4.13.2, javac 21 |
-| **tree-sitter** | `--format tree-sitter` | `grammar.js` | Prototype -- 335+ LR conflicts, not directly usable. See [tree-sitter-sysml](https://gitlab.com/nomograph/tree-sitter-sysml) for the hand-tuned grammar. |
+| **tree-sitter** | `--format tree-sitter` | `grammar.js` | **CI-validated** -- 82.8% corpus coverage, 0.15ms parse speed. Pattern-based emission with inlined prefix keywords. |
 
 ## Quick Start
 
@@ -40,14 +40,39 @@ Or browse: [latest pipeline artifacts](https://gitlab.com/nomograph/kebnf/-/pipe
 
 ## CI Validation
 
-Every push runs a four-stage validation:
+Every push runs a five-stage validation:
 
 1. **rust-build** -- zero compiler warnings
-2. **rust-test** -- 27 tests pass
+2. **rust-test** -- 30 tests pass
 3. **rust-clippy** -- zero lint warnings
 4. **antlr4-validate** -- generate .g4 from full KerML+SysML, compile with
    `antlr4 4.13.2` (zero errors), compile generated Java with `javac 21`
-   (529 class files)
+5. **tree-sitter-validate** -- generate grammar.js from full KerML+SysML,
+   run `tree-sitter generate` (valid parser.c produced)
+
+## Tree-sitter Backend
+
+The tree-sitter backend uses pattern-based emission: each definition and
+usage rule has its prefix keywords inlined for early disambiguation.
+This eliminates the shared-prefix ambiguity that causes GLR timeout in
+naive conversion approaches.
+
+**Corpus coverage: 82.8%** (159/192 test snippets from
+[tree-sitter-sysml](https://gitlab.com/nomograph/tree-sitter-sysml))
+
+| Category | Coverage |
+|----------|----------|
+| Attributes, Calculations | 100% |
+| Definitions, Expressions | 95%+ |
+| States | 91% |
+| Packages, Constraints, Requirements | 82-89% |
+| Actions, Flows | 80% |
+| Views, Usages | 75-83% |
+
+Parse speed: 0.15ms for typical files (4000+ bytes/ms).
+
+See [docs/TREE-SITTER-FINDINGS.md](docs/TREE-SITTER-FINDINGS.md) for the
+full research journey from mechanical conversion to pattern-based emission.
 
 ## What is KeBNF?
 
