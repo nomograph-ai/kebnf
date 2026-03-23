@@ -46,7 +46,7 @@ const DEFINITIONS: &[(&str, &str, &str)] = &[
         "definition_body",
     ),
     ("UseCaseDefinition", "use', 'case", "definition_body"),
-    ("ViewDefinition", "view", "definition_body"),
+    ("ViewDefinition", "view", "view_body"),
     ("ViewpointDefinition", "viewpoint", "definition_body"),
     ("RenderingDefinition", "rendering", "definition_body"),
     ("MetadataDefinition", "metadata", "metadata_body"),
@@ -66,17 +66,17 @@ const USAGES: &[(&str, &str, &str)] = &[
     ("AllocationUsage", "allocation", "usage_body"),
     ("FlowUsage", "flow", "usage_body"),
     ("ActionUsage", "action", "action_body"),
-    ("StateUsage", "state", "usage_body"),
-    ("CalculationUsage", "calc", "usage_body"),
-    ("ConstraintUsage", "constraint", "usage_body"),
-    ("RequirementUsage", "requirement", "usage_body"),
-    ("ConcernUsage", "concern", "usage_body"),
-    ("CaseUsage", "case", "usage_body"),
-    ("AnalysisCaseUsage", "analysis", "usage_body"),
-    ("VerificationCaseUsage", "verification", "usage_body"),
-    ("UseCaseUsage", "use', 'case", "usage_body"),
-    ("ViewUsage", "view", "usage_body"),
-    ("ViewpointUsage", "viewpoint", "usage_body"),
+    ("StateUsage", "state", "state_def_body"),
+    ("CalculationUsage", "calc", "calculation_body"),
+    ("ConstraintUsage", "constraint", "definition_body"),
+    ("RequirementUsage", "requirement", "requirement_body"),
+    ("ConcernUsage", "concern", "requirement_body"),
+    ("CaseUsage", "case", "case_body"),
+    ("AnalysisCaseUsage", "analysis", "case_body"),
+    ("VerificationCaseUsage", "verification", "case_body"),
+    ("UseCaseUsage", "use', 'case", "case_body"),
+    ("ViewUsage", "view", "view_body"),
+    ("ViewpointUsage", "viewpoint", "requirement_body"),
     ("RenderingUsage", "rendering", "usage_body"),
     ("MetadataUsage", "metadata", "metadata_body"),
     ("ReferenceUsage", "ref", "usage_body"),
@@ -302,7 +302,7 @@ impl Emitter {
     }
 
     fn emit_source_file(&mut self) {
-        self.line("source_file: $ => repeat(choice($.package, $.library_package, $._definition, $._usage, $._member)),");
+        self.line("source_file: $ => repeat(choice($.package, $.library_package, $._definition, $._usage, $.comment_about, $._member)),");
         self.line("");
         self.emitted_rules.insert("source_file".to_string());
 
@@ -425,6 +425,13 @@ impl Emitter {
         self.line("$.library_package,");
         self.line("$.generic_feature,");
         self.line("$.redefinition_statement,");
+        self.line("$.event_usage,");
+        self.line("$.message_usage,");
+        self.line("$.snapshot_usage,");
+        self.line("$.variation_statement,");
+        self.line("$.prefix_metadata_annotation,");
+        self.line("$.metadata_statement,");
+        self.line("$.metadata_about,");
         self.line("$.documentation_comment,");
         // Member wrapper rules excluded to avoid indirect recursion
         self.indent -= 1;
@@ -434,13 +441,13 @@ impl Emitter {
         // Body types
         self.line("definition_body: $ => choice(';', seq('{', repeat(choice($._member, $.generic_feature, $.end_feature, $.doc_comment, $.owned_expression)), '}')),");
         self.line("");
-        self.line("usage_body: $ => choice(';', seq('{', repeat(choice($._member, $.generic_feature, $.doc_comment, $.owned_expression)), '}')),");
+        self.line("usage_body: $ => choice(';', seq('{', repeat(choice($._member, $.generic_feature, $.assert_statement, $.redefinition_statement, $.doc_comment, $.owned_expression)), '}')),");
         self.line("");
         self.line("action_body: $ => choice(';', seq('{', repeat(choice($._member, $.generic_feature, $.action_node_member, $.guarded_succession_member, $.first_statement, $.then_succession, $.if_then_statement, $.while_loop, $.for_loop, $.loop_action, $.send_statement, $.perform_statement, $.assign_statement, $.accept_then_statement, $.terminate_statement, $.succession_statement, $.doc_comment, $.redefinition_statement, $.owned_expression)), '}')),");
         self.line("");
         self.line("enumeration_body: $ => choice(';', seq('{', repeat(choice($._member, $.enumerated_value)), '}')),");
         self.line("");
-        self.line("metadata_body: $ => choice(';', seq('{', repeat(choice($.metadata_body_feature, $.metadata_body_usage)), '}')),");
+        self.line("metadata_body: $ => choice(';', seq('{', repeat(choice($.metadata_body_feature, $.metadata_body_usage, $.generic_feature, $.metadata_statement, $.owned_expression)), '}')),");
         self.line("");
         self.line("requirement_body: $ => choice(';', seq('{', repeat(choice($._member, $.requirement_constraint_member, $.framed_concern_member, $.actor_member, $.stakeholder_member, $.subject_member, $.requirement_verification_member, $.assert_statement, $.require_statement, $.assume_statement, $.satisfy_statement, $.verify_statement, $.doc_comment)), '}')),");
         self.line("");
@@ -448,7 +455,7 @@ impl Emitter {
         self.line("");
         self.line("view_body: $ => choice(';', seq('{', repeat(choice($._member, $.view_rendering_member, $.expose_statement, $.render_statement, $.filter_statement, $.satisfy_statement, $.frame_statement)), '}')),");
         self.line("");
-        self.line("state_def_body: $ => choice(';', seq('{', repeat(choice($._member, $.entry_action_member, $.do_action_member, $.exit_action_member, $.entry_statement, $.exit_statement, $.do_statement, $.transition_statement, $.accept_then_statement)), '}')),");
+        self.line("state_def_body: $ => choice(';', seq('parallel', ';'), seq(optional('parallel'), '{', repeat(choice($._member, $.generic_feature, $.entry_action_member, $.do_action_member, $.exit_action_member, $.entry_statement, $.exit_statement, $.do_statement, $.transition_statement, $.accept_then_statement, $.first_statement, $.then_succession, $.doc_comment)), '}')),");
         self.line("");
         self.line("state_usage_body: $ => choice(';', seq('{', repeat(choice($._member, $.entry_action_member, $.do_action_member, $.exit_action_member)), '}')),");
         self.line("");
@@ -538,6 +545,8 @@ impl Emitter {
         // Unary
         self.line("prec(14, seq(choice('not', '~', '-', '+'), $.owned_expression)),");
         self.line("prec(15, seq('all', $.qualified_name)),");
+        // Feature chain binding (::>)
+        self.line("prec.left(16, seq($.owned_expression, '::>', $.owned_expression)),");
         // Feature chain (a.b.c)
         self.line("prec.left(16, seq($.owned_expression, '.', $.name)),");
         self.line("prec.left(16, seq($.owned_expression, '.?', $.name)),");
@@ -789,6 +798,19 @@ impl Emitter {
         self.line("[$.satisfy_statement],");
         self.line("[$._member, $.owned_expression],");
         self.line("[$.feature_specialization_part],");
+        self.line("[$._member, $.requirement_body],");
+        self.line("[$._member, $.view_body],");
+        self.line("[$.usage_body, $.transition_statement],");
+        self.line("[$._member, $.state_def_body],");
+        self.line("[$._member, $.assert_statement],");
+        self.line("[$.action_body, $.first_statement],");
+        self.line("[$.action_body, $.then_succession],");
+        self.line("[$.package, $.attribute_definition, $.enumeration_definition, $.occurrence_definition, $.individual_definition, $.item_definition, $.part_definition, $.port_definition, $.connection_definition, $.interface_definition, $.allocation_definition, $.flow_definition, $.action_definition, $.state_definition, $.calculation_definition, $.constraint_definition, $.requirement_definition, $.concern_definition, $.case_definition, $.analysis_case_definition, $.verification_case_definition, $.use_case_definition, $.view_definition, $.viewpoint_definition, $.rendering_definition, $.metadata_definition, $.attribute_usage, $.enumeration_usage, $.occurrence_usage, $.individual_usage, $.item_usage, $.part_usage, $.port_usage, $.connection_usage, $.interface_usage, $.allocation_usage, $.flow_usage, $.action_usage, $.state_usage, $.calculation_usage, $.constraint_usage, $.requirement_usage, $.concern_usage, $.case_usage, $.analysis_case_usage, $.verification_case_usage, $.use_case_usage, $.view_usage, $.viewpoint_usage, $.rendering_usage, $.metadata_usage, $.reference_usage, $.event_occurrence_usage, $._member, $.dependency, $.snapshot_usage, $.message_usage, $.event_usage],");
+        self.line("[$._member, $.control_node_prefix],");
+        self.line("[$._member, $.action_node_prefix],");
+        self.line("[$.owned_expression, $.general_type],");
+        self.line("[$.metadata_statement],");
+        self.line("[$.metadata_about],");
         self.indent -= 1;
         self.line("],");
         self.line("");
@@ -929,77 +951,100 @@ impl Emitter {
         self.line("import: $ => seq(optional($.visibility_indicator), 'import', optional('all'), $.import_declaration, choice(';', $.usage_body)),");
         self.line("");
         // Comment about
-        self.line("comment_about: $ => seq('comment', optional(seq('about', $.qualified_name, repeat(seq(',', $.qualified_name)))), optional($.regular_comment)),");
+        self.line("comment_about: $ => prec(1, seq('comment', optional(seq('about', $.qualified_name, repeat(seq(',', $.qualified_name)))), optional($.regular_comment))),");
         self.line("");
         // Redefinition statement (:>> x;)
-        self.line("redefinition_statement: $ => seq(':>>', $.owned_expression, optional($.feature_value), ';'),");
+        self.line("redefinition_statement: $ => prec(1, seq(':>>', $.owned_expression, optional($.feature_value), ';')),");
         self.line("");
         // Feature value (= expression)
         self.line("feature_value: $ => seq(choice('=', ':=', seq('default', choice('=', ':='))), $.owned_expression),");
         self.line("");
         // Action body statements
-        // first start; | first action x : T; | first a then b;
-        self.line("first_statement: $ => prec.left(0, seq('first', choice('start', seq(optional(choice('action', 'state')), $.owned_expression)), optional(seq('then', choice('done', $.owned_expression, $.action_body))), optional(';'))),");
+        // first start; | first action focus : Focus; | first a then b;
+        self.line("first_statement: $ => prec.left(0, seq('first', choice('start', seq(choice('action', 'state'), optional($.usage_declaration), optional($.feature_value), choice(';', $.action_body)), $.owned_expression), optional(seq('then', choice('done', seq(choice('action', 'state'), optional($.usage_declaration), optional($.feature_value), choice(';', $.action_body)), $.owned_expression, $.action_body))), optional(';'))),");
         self.line("");
-        self.line("then_succession: $ => prec.left(0, seq('then', choice($.owned_expression, 'done', $.if_then_statement, $.while_loop, $.for_loop, $.send_statement, $.perform_statement, $.assign_statement, $.accept_then_statement, $.action_body), optional(';'))),");
+        self.line("then_succession: $ => prec.left(0, seq('then', choice('done', seq(choice('action', 'state'), optional($.usage_declaration), optional($.feature_value), choice(';', $.action_body)), seq($.owned_expression, optional($.action_body)), $.if_then_statement, $.while_loop, $.for_loop, $.send_statement, $.perform_statement, $.assign_statement, $.accept_then_statement), optional(';'))),");
         self.line("");
         self.line("if_then_statement: $ => prec.left(0, seq('if', $.owned_expression, 'then', choice($.owned_expression, $.action_body), optional(seq('else', choice($.owned_expression, $.action_body, $.if_then_statement))), optional(';'))),");
         self.line("");
-        self.line("while_loop: $ => seq('while', $.owned_expression, $.action_body),");
+        self.line("while_loop: $ => prec(1, seq('while', $.owned_expression, $.action_body)),");
         self.line("");
         self.line("loop_action: $ => prec.left(0, seq('loop', optional('action'), optional($.usage_declaration), $.action_body, optional(seq('until', $.owned_expression, ';')))),");
         self.line("");
-        self.line("for_loop: $ => seq('for', $.name, 'in', $.owned_expression, $.action_body),");
+        self.line(
+            "for_loop: $ => prec(1, seq('for', $.name, 'in', $.owned_expression, $.action_body)),",
+        );
         self.line("");
-        self.line("send_statement: $ => seq('send', $.owned_expression, choice(seq('to', $.owned_expression), seq('via', $.owned_expression)), ';'),");
+        self.line("send_statement: $ => prec(1, seq('send', $.owned_expression, choice(seq('to', $.owned_expression), seq('via', $.owned_expression)), ';')),");
         self.line("");
-        self.line("perform_statement: $ => seq('perform', optional('action'), optional($.usage_declaration), $.action_body),");
+        self.line("perform_statement: $ => prec(1, seq('perform', optional('action'), optional($.usage_declaration), $.action_body)),");
         self.line("");
-        self.line("assign_statement: $ => seq('assign', $.qualified_name, ':=', $.owned_expression, ';'),");
+        self.line("assign_statement: $ => prec(1, seq('assign', $.qualified_name, ':=', $.owned_expression, ';')),");
         self.line("");
-        self.line("accept_then_statement: $ => seq('accept', choice(seq('when', $.owned_expression), seq('after', $.owned_expression)), optional(seq('then', choice($.name, $.action_body)))),");
+        self.line("accept_then_statement: $ => prec(1, seq('accept', choice(seq('when', $.owned_expression), seq('after', $.owned_expression)), optional(seq('then', choice($.owned_expression, $.action_body))), optional(';'))),");
         self.line("");
-        self.line("terminate_statement: $ => seq('terminate', $.qualified_name, ';'),");
+        self.line("terminate_statement: $ => prec(1, seq('terminate', $.qualified_name, ';')),");
+        self.line("");
+        // Metadata about: metadata SafetyFeature about vehicle::x, vehicle::y;
+        self.line("metadata_about: $ => prec(1, seq('metadata', optional($.usage_declaration), 'about', $.qualified_name, repeat(seq(',', $.qualified_name)), optional(';'))),");
+        self.line("");
+        // Metadata statement (@Annotation;)
+        self.line("metadata_statement: $ => prec(1, seq('@', $.qualified_name, optional(seq('{', repeat(choice($.generic_feature, $.owned_expression)), '}')), optional(';'))),");
+        self.line("");
+        // Snapshot/timeslice usage
+        self.line("snapshot_usage: $ => prec(1, seq(repeat($.prefix_metadata_annotation), optional($.visibility_indicator), 'snapshot', optional($.usage_declaration), optional($.multiplicity), optional($.feature_value), $.usage_body)),");
+        self.line("");
+        // Message usage: abstract message messages : Message[0..*] nonunique :> transfers { }
+        self.line("message_usage: $ => prec(1, seq(repeat($.prefix_metadata_annotation), optional($.visibility_indicator), optional('abstract'), 'message', optional($.usage_declaration), repeat(choice($.feature_specialization, $.multiplicity, 'nonunique')), optional($.feature_value), $.usage_body)),");
+        self.line("");
+        // Override allocation_usage: allocation myAlloc allocate sw to hw;
+        self.line("allocation_usage: $ => seq(repeat($.prefix_metadata_annotation), optional($.visibility_indicator), optional($.feature_direction), optional('abstract'), optional('ref'), 'allocation', optional($.usage_declaration), optional(seq('allocate', $.owned_expression, optional(seq('to', $.owned_expression)))), optional($.feature_value), $.usage_body),");
+        self.line("");
+        // Event usage (event without occurrence)
+        self.line("event_usage: $ => prec(1, seq(repeat($.prefix_metadata_annotation), optional($.visibility_indicator), optional('abstract'), 'event', optional($.usage_declaration), optional($.multiplicity), optional($.feature_value), $.usage_body)),");
+        self.line("");
+        // Variation keyword
+        self.line("variation_statement: $ => prec(1, seq('variation', optional('perform'), optional('action'), optional($.usage_declaration), $.action_body)),");
         self.line("");
         // Generic feature (bare usage without keyword: in x : T;)
-        self.line("generic_feature: $ => seq(optional($.feature_direction), optional('abstract'), optional('ref'), $.usage_declaration, optional($.multiplicity), optional($.feature_value), choice(';', $.usage_body)),");
+        self.line("generic_feature: $ => prec(-1, choice(seq(optional($.feature_direction), optional('abstract'), optional('ref'), $.usage_declaration, optional($.multiplicity), optional($.feature_value), choice(';', $.usage_body)), seq($.feature_specialization_part, optional($.multiplicity), optional($.feature_value), choice(';', $.usage_body)))),");
         self.line("");
         // End features (connection/interface endpoints)
         // end [1] part supplier : FuelPort;  OR  end :>> source : USBPort;
-        self.line("end_feature: $ => prec.left(0, seq('end', optional($.multiplicity), optional(choice('part', 'port', 'occurrence')), optional($.usage_declaration), optional($.feature_value), choice(';', $.usage_body))),");
+        self.line("end_feature: $ => prec.left(0, seq('end', optional($.multiplicity), optional(choice('part', 'port', 'occurrence')), optional(choice($.usage_declaration, seq(':>>', $.owned_expression, optional($.feature_specialization_part)))), optional($.feature_value), choice(';', $.usage_body))),");
         self.line("");
         // Connection/flow statements
-        self.line("connect_statement: $ => seq('connect', $.owned_expression, 'to', $.owned_expression, choice(';', $.usage_body)),");
+        self.line("connect_statement: $ => prec(1, seq('connect', $.owned_expression, 'to', $.owned_expression, choice(';', $.usage_body))),");
         self.line("");
         self.line(
             "bind_statement: $ => seq('bind', $.owned_expression, '=', $.owned_expression, ';'),",
         );
         self.line("");
-        self.line("flow_statement: $ => seq(optional('succession'), 'flow', optional('from'), $.owned_expression, 'to', $.owned_expression, choice(';', $.usage_body)),");
+        self.line("flow_statement: $ => prec(1, seq(optional('succession'), 'flow', optional('from'), $.owned_expression, 'to', $.owned_expression, choice(';', $.usage_body))),");
         self.line("");
-        self.line("allocate_statement: $ => seq('allocate', $.owned_expression, optional(seq('to', $.owned_expression)), choice(';', $.usage_body)),");
+        self.line("allocate_statement: $ => prec(1, seq('allocate', $.owned_expression, optional(seq('to', $.owned_expression)), choice(';', $.usage_body))),");
         self.line("");
-        self.line("exhibit_statement: $ => seq('exhibit', choice(seq(optional($.usage_declaration), choice(';', $.usage_body)), seq($.owned_expression, choice(';', $.usage_body)))),");
+        self.line("exhibit_statement: $ => prec(1, seq('exhibit', choice(seq(optional($.usage_declaration), choice(';', $.usage_body)), seq($.owned_expression, choice(';', $.usage_body))))),");
         self.line("");
-        self.line("succession_statement: $ => prec.left(0, seq('succession', optional($.usage_declaration), optional(seq('first', $.owned_expression)), optional(seq('then', $.owned_expression)), choice(';', $.usage_body))),");
+        self.line("succession_statement: $ => prec.left(0, seq('succession', optional(choice($.usage_declaration, $.feature_specialization_part)), optional($.multiplicity), optional(seq('first', optional($.multiplicity), $.owned_expression)), optional(seq('then', optional($.multiplicity), $.owned_expression)), choice(';', $.usage_body))),");
         self.line("");
         // Requirement body statements
         self.line("satisfy_statement: $ => prec(1, seq('satisfy', $.qualified_name, optional(seq('by', $.qualified_name)), optional(';'))),");
         self.line("");
-        self.line("verify_statement: $ => seq('verify', $.qualified_name, ';'),");
+        self.line("verify_statement: $ => prec(1, seq('verify', $.qualified_name, ';')),");
         self.line("");
-        self.line("assert_statement: $ => seq(optional('private'), 'assert', optional('constraint'), optional($.usage_declaration), choice(seq('{', $.owned_expression, '}'), ';')),");
+        self.line("assert_statement: $ => prec(1, seq(optional('private'), 'assert', optional('constraint'), optional($.usage_declaration), choice(seq('{', repeat(choice($._member, $.generic_feature, $.owned_expression)), '}'), ';'))),");
         self.line("");
-        self.line("require_statement: $ => seq('require', optional($.prefix_metadata_annotation), optional('constraint'), choice(seq('{', optional($.owned_expression), '}'), seq($.qualified_name, optional(';')))),");
+        self.line("require_statement: $ => prec(1, seq('require', optional($.prefix_metadata_annotation), optional('constraint'), choice(seq('{', optional($.owned_expression), '}'), seq($.qualified_name, optional(';'))))),");
         self.line("");
-        self.line("assume_statement: $ => seq('assume', optional($.prefix_metadata_annotation), optional('constraint'), choice(seq('{', optional($.owned_expression), '}'), seq($.qualified_name, optional(';')))),");
+        self.line("assume_statement: $ => prec(1, seq('assume', optional($.prefix_metadata_annotation), optional('constraint'), choice(seq('{', optional($.owned_expression), '}'), seq($.qualified_name, optional(';'))))),");
         self.line("");
         // State body statements
-        self.line("entry_statement: $ => seq('entry', choice(seq('action', optional($.usage_declaration), $.action_body), seq($.assign_statement), ';')),");
+        self.line("entry_statement: $ => prec(1, seq('entry', choice(seq('action', optional($.usage_declaration), $.action_body), seq($.assign_statement), ';'))),");
         self.line("");
-        self.line("exit_statement: $ => seq('exit', choice(seq('action', optional($.usage_declaration), $.action_body), ';')),");
+        self.line("exit_statement: $ => prec(1, seq('exit', choice(seq('action', optional($.usage_declaration), $.action_body), ';'))),");
         self.line("");
-        self.line("do_statement: $ => seq('do', choice(seq('action', optional($.usage_declaration), $.action_body), seq($.qualified_name, ';'))),");
+        self.line("do_statement: $ => prec(1, seq('do', choice(seq('action', optional($.usage_declaration), $.action_body), seq($.qualified_name, ';')))),");
         self.line("");
         self.line("transition_statement: $ => prec.left(0, seq('transition', optional($.usage_declaration), optional(seq('first', $.qualified_name)), optional(seq('accept', $.owned_expression)), optional(seq('then', $.qualified_name)), choice(';', $.usage_body))),");
         self.line("");
@@ -1011,10 +1056,10 @@ impl Emitter {
         self.line("");
         self.line("filter_statement: $ => prec(1, seq('filter', choice(seq('@', $.qualified_name), $.owned_expression), ';')),");
         self.line("");
-        self.line("frame_statement: $ => seq('frame', $.qualified_name, ';'),");
+        self.line("frame_statement: $ => prec(1, seq('frame', $.qualified_name, ';')),");
         self.line("");
         // Documentation
-        self.line("doc_comment: $ => seq('doc', optional($.regular_comment)),");
+        self.line("doc_comment: $ => prec(1, seq('doc', optional($.regular_comment))),");
         self.line("");
         // usage_declaration: just identification + specialization (multiplicity handled in usage pattern)
         self.line("");
@@ -1097,7 +1142,8 @@ impl Emitter {
         self.line("");
         self.line("exponential_value: $ => /[0-9]+[eE][+-]?[0-9]+/,");
         self.line("");
-        self.line("real_value: $ => choice(/[0-9]+\\.[0-9]*([eE][+-]?[0-9]+)?/, /\\.[0-9]+([eE][+-]?[0-9]+)?/),");
+        // Require at least one digit after dot to avoid consuming 1. in 1..10
+        self.line("real_value: $ => choice(/[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?/, /\\.[0-9]+([eE][+-]?[0-9]+)?/),");
         self.line("");
     }
 
