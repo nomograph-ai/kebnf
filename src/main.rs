@@ -104,7 +104,13 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     let output_path = cli.output.clone().unwrap_or_else(|| {
         let ext = emitters::default_extension(format);
-        PathBuf::from(format!("grammar.{}", ext))
+        if format == emitters::OutputFormat::Antlr4 {
+            // ANTLR4 requires filename == grammar name
+            let grammar_name = emitters::antlr4_grammar_name(&cli.name);
+            PathBuf::from(format!("{}.{}", grammar_name, ext))
+        } else {
+            PathBuf::from(format!("grammar.{}", ext))
+        }
     });
 
     let mut all_rules = Vec::new();

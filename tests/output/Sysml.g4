@@ -15,9 +15,13 @@
 //     'import' is an ANTLR4 reserved word.
 //   - Some KeBNF rules are purely semantic (e.g., EmptyFeature) and
 //     have been omitted. References to them are dropped.
-//   - Symbol alias tokens (SPECIALIZES, SUBSETS, etc.) have overlapping
-//     alternatives that produce ANTLR4 warnings. This is inherent to
-//     the SysML v2 design (both symbolic and keyword forms are valid).
+//   - Symbol alias tokens (SPECIALIZES, SUBSETS, etc.) are emitted as
+//     parser rules so multi-token keyword alternatives (e.g., 'typed' 'by')
+//     match correctly with whitespace between tokens.
+//   - REGULAR_COMMENT is a parser-visible lexer token matching /* ... */.
+//     It is used as structured comment body in Comment, Documentation,
+//     and TextualRepresentation rules. Annotation notes (//* ... */)
+//     are sent to channel(HIDDEN) as MULTILINE_NOTE.
 //
 
 grammar Sysml;
@@ -82,6 +86,41 @@ filterPackage
     ;
 
 // ─── Parser rules ────────────────────────────────────────
+
+typedBy_
+    : ':'
+    | 'typed' 'by'
+    ;
+
+specializes_
+    : ':>'
+    | 'specializes'
+    ;
+
+subsets_
+    : ':>'
+    | 'subsets'
+    ;
+
+references_
+    : '::>'
+    | 'references'
+    ;
+
+crosses_
+    : '=>'
+    | 'crosses'
+    ;
+
+redefines_
+    : ':>>'
+    | 'redefines'
+    ;
+
+conjugates_
+    : '~'
+    | 'conjugates'
+    ;
 
 identification
     : (('<' NAME '>'))? (NAME)?
@@ -260,11 +299,11 @@ typeDeclaration
     ; // : Type
 
 specializationPart
-    : SPECIALIZES generalType ((',' generalType))*
+    : specializes_ generalType ((',' generalType))*
     ; // : Type
 
 conjugationPart
-    : CONJUGATES ownedConjugation
+    : conjugates_ ownedConjugation
     ; // : Type
 
 typeRelationshipPart
@@ -303,7 +342,7 @@ typeBodyElement
     ; // : Type
 
 specialization
-    : (('specialization' identification))? 'subtype' specificType SPECIALIZES generalType relationshipBody
+    : (('specialization' identification))? 'subtype' specificType specializes_ generalType relationshipBody
     ;
 
 ownedSpecialization
@@ -322,7 +361,7 @@ generalType
 
 conjugation
     : (('conjugation' identification))? 'conjugate' (qualifiedName
-    | featureChain) CONJUGATES (qualifiedName
+    | featureChain) conjugates_ (qualifiedName
     | featureChain) relationshipBody
     ;
 
@@ -380,11 +419,11 @@ classifierDeclaration
     ; // : Classifier
 
 superclassingPart
-    : SPECIALIZES ownedSubclassification ((',' ownedSubclassification))*
+    : specializes_ ownedSubclassification ((',' ownedSubclassification))*
     ; // : Classifier
 
 subclassification
-    : (('specialization' identification))? 'subclassifier' qualifiedName SPECIALIZES qualifiedName relationshipBody
+    : (('specialization' identification))? 'subclassifier' qualifiedName specializes_ qualifiedName relationshipBody
     ;
 
 ownedSubclassification
@@ -483,7 +522,7 @@ typings
     ; // : Feature
 
 typedBy
-    : TYPED_BY generalType
+    : typedBy_ generalType
     ; // : Feature
 
 subsettings
@@ -491,15 +530,15 @@ subsettings
     ; // : Feature
 
 subsets
-    : SUBSETS generalType
+    : subsets_ generalType
     ; // : Feature
 
 references
-    : REFERENCES generalType
+    : references_ generalType
     ; // : Feature
 
 crosses
-    : CROSSES generalType
+    : crosses_ generalType
     ; // : Feature
 
 redefinitions
@@ -507,11 +546,11 @@ redefinitions
     ; // : Feature
 
 redefines
-    : REDEFINES generalType
+    : redefines_ generalType
     ; // : Feature
 
 featureTyping
-    : (('specialization' identification))? 'typing' qualifiedName TYPED_BY generalType relationshipBody
+    : (('specialization' identification))? 'typing' qualifiedName typedBy_ generalType relationshipBody
     ;
 
 ownedFeatureTyping
@@ -519,7 +558,7 @@ ownedFeatureTyping
     ; // : FeatureTyping
 
 subsetting
-    : (('specialization' identification))? 'subset' specificType SUBSETS generalType relationshipBody
+    : (('specialization' identification))? 'subset' specificType subsets_ generalType relationshipBody
     ;
 
 ownedSubsetting
@@ -535,7 +574,7 @@ ownedCrossSubsetting
     ; // : CrossSubsetting
 
 redefinition
-    : (('specialization' identification))? 'redefinition' specificType REDEFINES generalType relationshipBody
+    : (('specialization' identification))? 'redefinition' specificType redefines_ generalType relationshipBody
     ;
 
 ownedRedefinition
@@ -617,7 +656,7 @@ connectorEndMember
     ; // : EndFeatureMembership
 
 connectorEnd
-    : (multiplicityRange)? ((NAME REFERENCES))? generalType
+    : (multiplicityRange)? ((NAME references_))? generalType
     ; // : Feature
 
 ownedCrossMultiplicityMember
@@ -1253,6 +1292,11 @@ elementFilterMember
     : memberPrefix 'filter' ownedExpression ';'
     ; // : ElementFilterMembership
 
+definedBy_
+    : ':'
+    | 'defined' 'by'
+    ;
+
 dependencyDeclaration
     : ((identification 'from'))? qualifiedName ((',' qualifiedName))* 'to' qualifiedName ((',' qualifiedName))*
     ;
@@ -1501,7 +1545,7 @@ variantUsageElement
     ; // : Usage
 
 subclassificationPart
-    : SPECIALIZES ownedSubclassification ((',' ownedSubclassification))*
+    : specializes_ ownedSubclassification ((',' ownedSubclassification))*
     ; // : Classifier
 
 attributeDefinition
@@ -1717,7 +1761,7 @@ interfaceEndMember
     ; // : EndFeatureMembership
 
 interfaceEnd
-    : (multiplicityRange)? ((NAME REFERENCES))? generalType
+    : (multiplicityRange)? ((NAME references_))? generalType
     ; // : PortUsage
 
 allocationDefinition
@@ -2489,196 +2533,6 @@ extendedUsage
 
 // ─── Lexer rules (from KeBNF) ────────────────────────────
 
-RESERVED_KEYWORD
-    : 'about'
-    | 'abstract'
-    | 'alias'
-    | 'all'
-    | 'and'
-    | 'as'
-    | 'assoc'
-    | 'behavior'
-    | 'binding'
-    | 'bool'
-    | 'by'
-    | 'chains'
-    | 'class'
-    | 'classifier'
-    | 'comment'
-    | 'composite'
-    | 'conjugate'
-    | 'conjugates'
-    | 'conjugation'
-    | 'connector'
-    | 'const'
-    | 'crosses'
-    | 'datatype'
-    | 'default'
-    | 'dependency'
-    | 'derived'
-    | 'differences'
-    | 'disjoining'
-    | 'disjoint'
-    | 'doc'
-    | 'else'
-    | 'end'
-    | 'expr'
-    | 'false'
-    | 'feature'
-    | 'featured'
-    | 'featuring'
-    | 'filter'
-    | 'first'
-    | 'flow'
-    | 'for'
-    | 'from'
-    | 'function'
-    | 'hastype'
-    | 'if'
-    | 'implies'
-    | 'import'
-    | 'in'
-    | 'inout'
-    | 'interaction'
-    | 'intersects'
-    | 'inv'
-    | 'inverse'
-    | 'inverting'
-    | 'istype'
-    | 'language'
-    | 'library'
-    | 'locale'
-    | 'member'
-    | 'meta'
-    | 'metaclass'
-    | 'metadata'
-    | 'multiplicity'
-    | 'namespace'
-    | 'nonunique'
-    | 'not'
-    | 'null'
-    | 'of'
-    | 'or'
-    | 'ordered'
-    | 'out'
-    | 'package'
-    | 'portion'
-    | 'predicate'
-    | 'private'
-    | 'protected'
-    | 'public'
-    | 'redefines'
-    | 'redefinition'
-    | 'references'
-    | 'rep'
-    | 'return'
-    | 'specialization'
-    | 'specializes'
-    | 'standard'
-    | 'step'
-    | 'struct'
-    | 'subclassifier'
-    | 'subset'
-    | 'subsets'
-    | 'subtype'
-    | 'succession'
-    | 'then'
-    | 'to'
-    | 'true'
-    | 'type'
-    | 'typed'
-    | 'typing'
-    | 'unions'
-    | 'var'
-    | 'xor'
-    ;
-
-RESERVED_SYMBOL
-    : '~'
-    | '}'
-    | '|'
-    | '{'
-    | '^'
-    | ']'
-    | '['
-    | '@'
-    | '??'
-    | '?'
-    | '>='
-    | '>'
-    | '=>'
-    | '==='
-    | '=='
-    | '='
-    | '<='
-    | '<'
-    | ';'
-    | ':>>'
-    | ':>'
-    | ':='
-    | '::>'
-    | '::'
-    | ':'
-    | '/'
-    | '.?'
-    | '..'
-    | '.'
-    | '->'
-    | '-'
-    | ','
-    | '+'
-    | '**'
-    | '*'
-    | ')'
-    | '('
-    | '&'
-    | '%'
-    | '$'
-    | '#'
-    | '!=='
-    | '!='
-    ;
-
-TYPED_BY
-    : ':'
-    | 'typed' 'by'
-    ;
-
-SPECIALIZES
-    : ':>'
-    | 'specializes'
-    ;
-
-SUBSETS
-    : ':>'
-    | 'subsets'
-    ;
-
-REFERENCES
-    : '::>'
-    | 'references'
-    ;
-
-CROSSES
-    : '=>'
-    | 'crosses'
-    ;
-
-REDEFINES
-    : ':>>'
-    | 'redefines'
-    ;
-
-CONJUGATES
-    : '~'
-    | 'conjugates'
-    ;
-
-DEFINED_BY
-    : ':'
-    | 'defined' 'by'
-    ;
-
 // ─── Built-in lexer rules ───────────────────────────────
 // These replace the KeBNF lexical grammar with ANTLR4-native
 // patterns for whitespace, comments, names, and literals.
@@ -2687,12 +2541,16 @@ WS
     : [ \t\r\n]+ -> skip
     ;
 
+MULTILINE_NOTE
+    : '//*' .*? '*/' -> channel(HIDDEN)
+    ;
+
 SINGLE_LINE_COMMENT
     : '//' ~[\r\n]* -> channel(HIDDEN)
     ;
 
-MULTI_LINE_COMMENT
-    : '/*' .*? '*/' -> channel(HIDDEN)
+REGULAR_COMMENT
+    : '/*' .*? '*/'
     ;
 
 NAME

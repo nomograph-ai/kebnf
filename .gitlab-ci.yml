@@ -116,10 +116,26 @@ antlr4-validate:
     # Compile generated Java parser — must succeed
     - javac -cp antlr-4.13.2-complete.jar Sysml*.java
     - echo "ANTLR4 validation passed — $(ls Sysml*.class | wc -l) class files generated"
+    # Parse a minimal SysML file to verify the grammar works end-to-end
+    - |
+      cat > test_input.sysml <<'SYSML'
+      package TestPackage {
+          part def Vehicle {
+              attribute mass : ScalarValues::Real;
+          }
+          part myVehicle : Vehicle;
+          comment /* A structured comment body */
+          doc /* Package-level documentation */
+      }
+      SYSML
+    - java -cp ".:antlr-4.13.2-complete.jar" org.antlr.v4.gui.TestRig Sysml rootNamespace test_input.sysml 2>&1 | tee parse-output.txt
+    - "! grep -qi 'mismatched input\\|no viable alternative\\|extraneous input\\|missing' parse-output.txt"
+    - echo "ANTLR4 parse test passed"
   artifacts:
     paths:
       - Sysml.g4
       - antlr4-output.txt
+      - parse-output.txt
     expire_in: 30 days
     when: always
   rules:
