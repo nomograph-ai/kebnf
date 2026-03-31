@@ -1,4 +1,4 @@
-// Sysml — ANTLR4 combined grammar
+// Simple — ANTLR4 combined grammar
 //
 // Generated from OMG KeBNF specifications by kebnf.
 // Source: https://gitlab.com/nomograph/kebnf
@@ -15,12 +15,16 @@
 //     'import' is an ANTLR4 reserved word.
 //   - Some KeBNF rules are purely semantic (e.g., EmptyFeature) and
 //     have been omitted. References to them are dropped.
-//   - Symbol alias tokens (SPECIALIZES, SUBSETS, etc.) have overlapping
-//     alternatives that produce ANTLR4 warnings. This is inherent to
-//     the SysML v2 design (both symbolic and keyword forms are valid).
+//   - Symbol alias tokens (SPECIALIZES, SUBSETS, etc.) are emitted as
+//     parser rules so multi-token keyword alternatives (e.g., 'typed' 'by')
+//     match correctly with whitespace between tokens.
+//   - REGULAR_COMMENT is a parser-visible lexer token matching /* ... */.
+//     It is used as structured comment body in Comment, Documentation,
+//     and TextualRepresentation rules. Annotation notes (//* ... */)
+//     are sent to channel(HIDDEN) as MULTILINE_NOTE.
 //
 
-grammar Sysml;
+grammar Simple;
 
 // ─── Expressions ─────────────────────────────────────────
 // Merged from mutually recursive KeBNF rules into directly
@@ -129,12 +133,16 @@ WS
     : [ \t\r\n]+ -> skip
     ;
 
+MULTILINE_NOTE
+    : '//*' .*? '*/' -> channel(HIDDEN)
+    ;
+
 SINGLE_LINE_COMMENT
     : '//' ~[\r\n]* -> channel(HIDDEN)
     ;
 
-MULTI_LINE_COMMENT
-    : '/*' .*? '*/' -> channel(HIDDEN)
+REGULAR_COMMENT
+    : '/*' .*? '*/'
     ;
 
 NAME

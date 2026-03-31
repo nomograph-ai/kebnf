@@ -56,9 +56,11 @@ impl Antlr4Emitter {
 
         self.emit_header();
 
-        // Separate parser rules (CamelCase) from lexer rules (ALL_CAPS)
+        // Separate parser rules (CamelCase) from lexer rules (ALL_CAPS).
+        // Symbol alias tokens (TYPED_BY, etc.) are moved to the parser partition
+        // because their multi-token keyword alternatives require parser-level handling.
         let (parser_rules, lexer_rules): (Vec<_>, Vec<_>) =
-            rules.iter().partition(|r| !is_lexer_rule(&r.name));
+            rules.iter().partition(|r| !is_lexer_rule(&r.name) || is_symbol_alias(&r.name));
 
         // Section 1: Hand-crafted rules that break mutual left recursion
         self.emit_left_recursion_fixes();
@@ -262,9 +264,13 @@ impl Antlr4Emitter {
             "//     'import' is an ANTLR4 reserved word.\n",
             "//   - Some KeBNF rules are purely semantic (e.g., EmptyFeature) and\n",
             "//     have been omitted. References to them are dropped.\n",
-            "//   - Symbol alias tokens (SPECIALIZES, SUBSETS, etc.) have overlapping\n",
-            "//     alternatives that produce ANTLR4 warnings. This is inherent to\n",
-            "//     the SysML v2 design (both symbolic and keyword forms are valid).\n",
+            "//   - Symbol alias tokens (SPECIALIZES, SUBSETS, etc.) are emitted as\n",
+            "//     parser rules so multi-token keyword alternatives (e.g., 'typed' 'by')\n",
+            "//     match correctly with whitespace between tokens.\n",
+            "//   - REGULAR_COMMENT is a parser-visible lexer token matching /* ... */.\n",
+            "//     It is used as structured comment body in Comment, Documentation,\n",
+            "//     and TextualRepresentation rules. Annotation notes (//* ... */)\n",
+            "//     are sent to channel(HIDDEN) as MULTILINE_NOTE.\n",
             "//\n\n",
         ), name = name));
         self.output.push_str(&format!("grammar {};\n\n", name));
@@ -437,6 +443,9 @@ impl Antlr4Emitter {
             "COMMENT_TEXT",
             "COMMENT_LINE_TEXT",
             "PREFIX_COMMENT",
+            // Never referenced by parser rules; cause warning(184) overlaps
+            "RESERVED_KEYWORD",
+            "RESERVED_SYMBOL",
         ];
         SKIP.contains(&name)
     }
@@ -449,11 +458,20 @@ impl Antlr4Emitter {
         ));
         self.output
             .push_str("WS\n    : [ \\t\\r\\n]+ -> skip\n    ;\n\n");
+        // MULTILINE_NOTE must precede both SINGLE_LINE_COMMENT and REGULAR_COMMENT:
+        // - Before SINGLE_LINE_COMMENT so multi-line //*...\n...*/ blocks are captured
+        //   as notes, not truncated as line comments.
+        // - Before REGULAR_COMMENT so '//*' matches the note rule (first-match-wins).
+        self.output.push_str(
+            "MULTILINE_NOTE\n    : '//*' .*? '*/' -> channel(HIDDEN)\n    ;\n\n",
+        );
         self.output.push_str(
             "SINGLE_LINE_COMMENT\n    : '//' ~[\\r\\n]* -> channel(HIDDEN)\n    ;\n\n",
         );
+        // REGULAR_COMMENT is parser-visible — used as structured comment body
+        // in Comment, Documentation, and TextualRepresentation rules.
         self.output
-            .push_str("MULTI_LINE_COMMENT\n    : '/*' .*? '*/' -> channel(HIDDEN)\n    ;\n\n");
+            .push_str("REGULAR_COMMENT\n    : '/*' .*? '*/'\n    ;\n\n");
         self.output
             .push_str("NAME\n    : BASIC_NAME | UNRESTRICTED_NAME\n    ;\n\n");
         self.output
@@ -545,10 +563,47 @@ const ANTLR4_RESERVED: &[&str] = &[
     "tokens", "channels",
 ];
 
+/// KeBNF symbol alias tokens that must be emitted as parser rules, not lexer rules.
+/// These have multi-token keyword alternatives (e.g., `'typed' 'by'`) that only
+/// work correctly as parser rules where token sequences are supported.
+const SYMBOL_ALIAS_TOKENS: &[&str] = &[
+    "TYPED_BY", "SPECIALIZES", "SUBSETS", "REFERENCES",
+    "CROSSES", "REDEFINES", "CONJUGATES", "DEFINED_BY",
+];
+
+fn is_symbol_alias(name: &str) -> bool {
+    SYMBOL_ALIAS_TOKENS.contains(&name)
+}
+
+/// Convert a symbol alias ALL_CAPS name to a camelCase parser rule name.
+/// TYPED_BY → typedBy_, SPECIALIZES → specializes_, etc.
+/// Underscore suffix avoids collision with existing parser rules of the same concept.
+fn symbol_alias_to_parser_name(name: &str) -> String {
+    let mut result = String::new();
+    for (i, part) in name.split('_').enumerate() {
+        if i == 0 {
+            result.push_str(&part.to_lowercase());
+        } else {
+            let mut chars = part.chars();
+            if let Some(c) = chars.next() {
+                result.push(c.to_ascii_uppercase());
+                result.push_str(&chars.as_str().to_lowercase());
+            }
+        }
+    }
+    result.push('_');
+    result
+}
+
 /// Convert a KeBNF rule name to ANTLR4 convention.
 /// CamelCase -> camelCase (parser), ALL_CAPS -> ALL_CAPS (lexer).
+/// Symbol aliases are converted to camelCase parser rules.
 /// Reserved words get a `_` suffix.
 fn to_antlr4_name(name: &str) -> String {
+    if is_symbol_alias(name) {
+        return symbol_alias_to_parser_name(name);
+    }
+
     let base = if is_lexer_rule(name) {
         name.to_string()
     } else {
@@ -577,7 +632,7 @@ fn escape_antlr4(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
-fn capitalize(s: &str) -> String {
+pub(crate) fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
         None => String::new(),

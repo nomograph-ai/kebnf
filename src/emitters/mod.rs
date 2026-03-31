@@ -49,6 +49,13 @@ pub fn emit(
     }
 }
 
+/// Compute the ANTLR4 grammar name from a user-supplied name.
+/// ANTLR4 requires filename == grammar name, so callers can use this
+/// to derive the correct output filename.
+pub fn antlr4_grammar_name(name: &str) -> String {
+    antlr4::capitalize(name)
+}
+
 /// Default file extension for the given format.
 pub fn default_extension(format: OutputFormat) -> &'static str {
     match format {
