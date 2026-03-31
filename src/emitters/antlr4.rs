@@ -297,8 +297,11 @@ impl Antlr4Emitter {
             comment = format!(" // : {}", produces_type);
         }
 
-        // Note renamed rules
-        if name.ends_with('_') && ANTLR4_RESERVED.contains(&&name[..name.len() - 1]) {
+        // Note renamed rules (only for ANTLR4 reserved words, not symbol aliases)
+        if name.ends_with('_')
+            && !is_symbol_alias(&rule.name)
+            && ANTLR4_RESERVED.contains(&&name[..name.len() - 1])
+        {
             comment.push_str(&format!(
                 " // renamed from '{}' (ANTLR4 reserved word)",
                 &name[..name.len() - 1]
@@ -687,6 +690,27 @@ mod tests {
     }
 
     #[test]
+    fn test_to_antlr4_name_symbol_alias() {
+        assert_eq!(to_antlr4_name("TYPED_BY"), "typedBy_");
+        assert_eq!(to_antlr4_name("SPECIALIZES"), "specializes_");
+        assert_eq!(to_antlr4_name("SUBSETS"), "subsets_");
+        assert_eq!(to_antlr4_name("REFERENCES"), "references_");
+        assert_eq!(to_antlr4_name("CROSSES"), "crosses_");
+        assert_eq!(to_antlr4_name("REDEFINES"), "redefines_");
+        assert_eq!(to_antlr4_name("CONJUGATES"), "conjugates_");
+        assert_eq!(to_antlr4_name("DEFINED_BY"), "definedBy_");
+    }
+
+    #[test]
+    fn test_is_symbol_alias() {
+        assert!(is_symbol_alias("TYPED_BY"));
+        assert!(is_symbol_alias("DEFINED_BY"));
+        assert!(!is_symbol_alias("NAME"));
+        assert!(!is_symbol_alias("DECIMAL_VALUE"));
+        assert!(!is_symbol_alias("PackageDeclaration"));
+    }
+
+    #[test]
     fn test_is_lexer_rule() {
         assert!(is_lexer_rule("NAME"));
         assert!(is_lexer_rule("DECIMAL_VALUE"));
@@ -820,5 +844,53 @@ mod tests {
         assert!(result.contains("foo\n    : 'x'\n    ;"));
         // Bar should not appear as a rule
         assert!(!result.contains("\nbar\n"));
+    }
+
+    #[test]
+    fn test_builtin_lexer_has_regular_comment() {
+        let rules = vec![Rule {
+            name: "Foo".to_string(),
+            produces_type: None,
+            body: RuleBody::Terminal("x".to_string()),
+            span: 0..0,
+            source_line: 0,
+        }];
+        let result = emit(&rules, "test").unwrap();
+        assert!(result.contains("REGULAR_COMMENT\n    : '/*' .*? '*/'\n    ;"));
+        assert!(result.contains("MULTILINE_NOTE\n    : '//*' .*? '*/' -> channel(HIDDEN)\n    ;"));
+        assert!(!result.contains("MULTI_LINE_COMMENT"));
+    }
+
+    #[test]
+    fn test_symbol_alias_emitted_as_parser_rule() {
+        let rules = vec![
+            Rule {
+                name: "TYPED_BY".to_string(),
+                produces_type: None,
+                body: RuleBody::Choice(vec![
+                    RuleBody::Terminal(":".to_string()),
+                    RuleBody::Sequence(vec![
+                        RuleBody::Terminal("typed".to_string()),
+                        RuleBody::Terminal("by".to_string()),
+                    ]),
+                ]),
+                span: 0..0,
+                source_line: 0,
+            },
+            Rule {
+                name: "Foo".to_string(),
+                produces_type: None,
+                body: RuleBody::RuleRef("TYPED_BY".to_string()),
+                span: 0..0,
+                source_line: 0,
+            },
+        ];
+        let result = emit(&rules, "test").unwrap();
+        // Symbol alias appears as camelCase parser rule
+        assert!(result.contains("typedBy_\n    : ':'"));
+        // References use the converted name
+        assert!(result.contains("foo\n    : typedBy_\n    ;"));
+        // ALL_CAPS lexer form should NOT appear
+        assert!(!result.contains("\nTYPED_BY\n"));
     }
 }
