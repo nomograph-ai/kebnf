@@ -158,6 +158,6 @@ publish-crates:
   image: rust:1.94
   needs: ["rust-build", "rust-test", "rust-clippy", "antlr4-validate", "tree-sitter-validate"]
   script:
-    - cargo publish --no-verify
+    - cargo publish --no-verify --allow-dirty
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
