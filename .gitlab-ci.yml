@@ -5,6 +5,8 @@ stages:
 
 default:
   image: rust:1.94
+  tags:
+    - storr
 
 # ============================================================================
 # Test Stage — Rust build, clippy, tests
