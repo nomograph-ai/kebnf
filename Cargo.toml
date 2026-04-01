@@ -1,6 +1,6 @@
 [package]
 name = "kebnf"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "Convert OMG KeBNF grammars to ANTLR4 and tree-sitter -- parses all 640 KerML + SysML v2 rules"
 license = "MIT"
