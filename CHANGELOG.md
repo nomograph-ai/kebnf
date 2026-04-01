@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.1 (2026-03-31)
+
+### Fixed
+- ANTLR4 output filename: default is now `Sysml.g4` (matching the `grammar Sysml;`
+  declaration) instead of `grammar.g4`, which caused ANTLR4 error(8)
+- `REGULAR_COMMENT` is now emitted as a parser-visible lexer token (`/* ... */`),
+  fixing dead `comment`, `documentation`, and `textualRepresentation` rules
+- `MULTILINE_NOTE` (`//* ... */`) emitted as hidden-channel annotation note
+- Symbol alias tokens (`TYPED_BY`, `SPECIALIZES`, `SUBSETS`, `REFERENCES`,
+  `CROSSES`, `REDEFINES`, `CONJUGATES`, `DEFINED_BY`) converted from lexer to
+  parser rules so multi-token keyword alternatives (`'typed' 'by'`) work correctly
+- `RESERVED_KEYWORD` and `RESERVED_SYMBOL` rules removed from output (unreferenced,
+  caused 16 ANTLR4 warnings)
+- Test fixtures renamed to match grammar names (`Sysml.g4`, `Simple.g4`)
+
+### Added
+- CI integration test: generated parser now parses a minimal SysML v2 file via
+  ANTLR4 TestRig to verify end-to-end correctness
+- Unit tests for symbol alias conversion (34 tests total, was 30)
+
 ## 0.2.0 (2026-03-23)
 
 ### Added
