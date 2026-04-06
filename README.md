@@ -1,9 +1,12 @@
+![hero](hero.svg)
+
 # kebnf
 
 [![Nomograph Labs](https://img.shields.io/badge/Nomograph_Labs-1a1a1a?style=flat&labelColor=f2f0eb&color=1a1a1a)](https://nomograph.ai)
 [![crates.io](https://img.shields.io/crates/v/kebnf.svg?color=1a1a1a)](https://crates.io/crates/kebnf)
 [![License: MIT](https://img.shields.io/badge/License-MIT-1a1a1a.svg)](LICENSE)
 [![pipeline status](https://gitlab.com/nomograph/kebnf/badges/main/pipeline.svg)](https://gitlab.com/nomograph/kebnf/-/pipelines)
+![built with GitLab](https://img.shields.io/badge/built_with-GitLab-FC6D26?logo=gitlab)
 
 Convert OMG KeBNF grammar specifications to parser grammars. Parses the
 full KerML + SysML v2 KeBNF specs (640 rules) and emits target-specific
@@ -189,3 +192,6 @@ MIT
 - [Nomograph Labs](https://nomograph.ai)
 - [tree-sitter-sysml](https://gitlab.com/nomograph/tree-sitter-sysml) -- hand-tuned SysML v2 grammar for tree-sitter
 - [SysML v2 Release](https://github.com/Systems-Modeling/SysML-v2-Release) -- OMG KeBNF source files
+
+---
+Built by Andrew Dunn, April 2026.
