@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" width="1200" height="430">
+  <!-- Background -->
+  <rect x="0" y="0" width="1200" height="430" fill="#faf6ed" stroke="#2c2417" stroke-width="3" rx="0"/>
+  <!-- Title bar -->
+  <rect x="0" y="0" width="1200" height="36" fill="#2c2417" rx="0"/>
+  <text x="16" y="24" font-size="14" font-weight="bold" fill="#faf6ed" font-family="'IBM Plex Mono', monospace">kebnf</text>
+  <text x="1184" y="24" font-size="11" fill="#c4b99a" text-anchor="end" font-family="'IBM Plex Mono', monospace">Grammar Swiss Army Knife</text>
+
+  <!-- OV-1: KeBNF grammar -> kebnf converter -> ANTLR4 + tree-sitter (two outputs) -->
+
+  <!-- Input: KeBNF Grammar -->
+  <rect x="80" y="115" width="220" height="140" fill="none" stroke="#2c2417" stroke-width="2" rx="0"/>
+  <text x="190" y="142" font-size="13" fill="#2c2417" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-weight="bold">KeBNF Grammar</text>
+  <line x1="110" y1="152" x2="270" y2="152" stroke="#c4b99a" stroke-width="1"/>
+  <text x="190" y="175" font-size="11" fill="#6b5d4f" text-anchor="middle" font-family="'IBM Plex Mono', monospace">OMG specification</text>
+  <text x="190" y="195" font-size="11" fill="#6b5d4f" text-anchor="middle" font-family="'IBM Plex Mono', monospace">grammar appendix</text>
+  <text x="190" y="215" font-size="11" fill="#6b5d4f" text-anchor="middle" font-family="'IBM Plex Mono', monospace">production rules</text>
+  <text x="190" y="245" font-size="10" fill="#c4b99a" text-anchor="middle" font-family="'IBM Plex Mono', monospace">SysML | KerML | OCL | ...</text>
+
+  <!-- Arrow: Input -> Process -->
+  <line x1="300" y1="190" x2="420" y2="190" stroke="#2c2417" stroke-width="1.5"/>
+  <polygon points="420,185 430,190 420,195" fill="#2c2417"/>
+
+  <!-- Process: kebnf converter -->
+  <rect x="430" y="115" width="340" height="140" fill="none" stroke="#2c2417" stroke-width="2" rx="0"/>
+  <rect x="430" y="115" width="340" height="30" fill="#2c2417" rx="0"/>
+  <text x="600" y="136" font-size="13" fill="#faf6ed" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-weight="bold">kebnf converter</text>
+  <text x="600" y="170" font-size="11" fill="#6b5d4f" text-anchor="middle" font-family="'IBM Plex Mono', monospace">parse KeBNF source</text>
+  <text x="600" y="190" font-size="11" fill="#6b5d4f" text-anchor="middle" font-family="'IBM Plex Mono', monospace">normalize productions</text>
+  <text x="600" y="210" font-size="11" fill="#6b5d4f" text-anchor="middle" font-family="'IBM Plex Mono', monospace">emit target grammar</text>
+  <text x="600" y="243" font-size="10" fill="#c4b99a" text-anchor="middle" font-family="'IBM Plex Mono', monospace">lossless | validated | round-trip</text>
+
+  <!-- Arrow: Process -> Output 1 (ANTLR4, upper) -->
+  <line x1="770" y1="170" x2="890" y2="140" stroke="#2c2417" stroke-width="1.5"/>
+  <polygon points="886,135 900,138 890,145" fill="#2c2417"/>
+
+  <!-- Arrow: Process -> Output 2 (tree-sitter, lower) -->
+  <line x1="770" y1="210" x2="890" y2="240" stroke="#2c2417" stroke-width="1.5"/>
+  <polygon points="886,245 900,242 890,235" fill="#2c2417"/>
+
+  <!-- Output 1: ANTLR4 Grammar -->
+  <rect x="900" y="100" width="220" height="70" fill="none" stroke="#2c2417" stroke-width="2" rx="0"/>
+  <text x="1010" y="125" font-size="13" fill="#2c2417" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-weight="bold">ANTLR4 Grammar</text>
+  <line x1="930" y1="133" x2="1090" y2="133" stroke="#c4b99a" stroke-width="1"/>
+  <text x="1010" y="152" font-size="11" fill="#6b5d4f" text-anchor="middle" font-family="'IBM Plex Mono', monospace">.g4 parser + lexer</text>
+
+  <!-- Output 2: tree-sitter Grammar -->
+  <rect x="900" y="200" width="220" height="70" fill="none" stroke="#2c2417" stroke-width="2" rx="0"/>
+  <text x="1010" y="225" font-size="13" fill="#2c2417" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-weight="bold">tree-sitter Grammar</text>
+  <line x1="930" y1="233" x2="1090" y2="233" stroke="#c4b99a" stroke-width="1"/>
+  <text x="1010" y="252" font-size="11" fill="#6b5d4f" text-anchor="middle" font-family="'IBM Plex Mono', monospace">grammar.js rules</text>
+
+  <!-- Footer -->
+  <line x1="40" y1="360" x2="1160" y2="360" stroke="#c4b99a" stroke-width="1"/>
+  <text x="600" y="380" font-size="10" fill="#6b5d4f" text-anchor="middle" font-family="'IBM Plex Mono', monospace">Convert OMG KeBNF grammars to ANTLR4 and tree-sitter</text>
+
+  <!-- Built with GitLab -->
+  <text x="590" y="408" text-anchor="middle" fill="#2c2417" font-size="9" font-weight="600" font-family="'IBM Plex Mono', monospace">Built with GitLab</text>
+  <g transform="translate(634, 397) scale(0.045)">
+    <path d="M282.83,170.73l-.27-.69-26.14-68.22a6.81,6.81,0,0,0-2.69-3.24,7,7,0,0,0-8,.43,7,7,0,0,0-2.32,3.52l-17.65,54H154.29l-17.65-54A6.86,6.86,0,0,0,134.32,99a7,7,0,0,0-8-.43,6.87,6.87,0,0,0-2.69,3.24L97.44,170l-.26.69a48.54,48.54,0,0,0,16.1,56.1l.09.07.24.17,39.82,29.82,19.7,14.91,12,9.06a8.07,8.07,0,0,0,9.76,0l12-9.06,19.7-14.91,40.06-30,.1-.08A48.56,48.56,0,0,0,282.83,170.73Z" fill="#E24329"/>
+    <path d="M282.83,170.73l-.27-.69a88.3,88.3,0,0,0-35.15,15.8L190,229.25c19.55,14.79,36.57,27.64,36.57,27.64l40.06-30,.1-.08A48.56,48.56,0,0,0,282.83,170.73Z" fill="#FC6D26"/>
+    <path d="M153.43,256.89l19.7,14.91,12,9.06a8.07,8.07,0,0,0,9.76,0l12-9.06,19.7-14.91S209.55,244,190,229.25C170.45,244,153.43,256.89,153.43,256.89Z" fill="#FCA326"/>
+    <path d="M132.58,185.84A88.19,88.19,0,0,0,97.44,170l-.26.69a48.54,48.54,0,0,0,16.1,56.1l.09.07.24.17,39.82,29.82s17-12.85,36.57-27.64Z" fill="#FC6D26"/>
+  </g>
+</svg>
