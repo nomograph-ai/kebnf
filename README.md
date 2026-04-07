@@ -2,11 +2,10 @@
 
 # kebnf
 
-[![Nomograph Labs](https://img.shields.io/badge/Nomograph_Labs-1a1a1a?style=flat&labelColor=f2f0eb&color=1a1a1a)](https://nomograph.ai)
-[![crates.io](https://img.shields.io/crates/v/kebnf.svg?color=1a1a1a)](https://crates.io/crates/kebnf)
-[![License: MIT](https://img.shields.io/badge/License-MIT-1a1a1a.svg)](LICENSE)
-[![pipeline status](https://gitlab.com/nomograph/kebnf/badges/main/pipeline.svg)](https://gitlab.com/nomograph/kebnf/-/pipelines)
+[![pipeline](https://gitlab.com/nomograph/kebnf/badges/main/pipeline.svg)](https://gitlab.com/nomograph/kebnf/-/pipelines)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![built with GitLab](https://img.shields.io/badge/built_with-GitLab-FC6D26?logo=gitlab)
+[![crates.io](https://img.shields.io/crates/v/kebnf.svg)](https://crates.io/crates/kebnf)
 
 Convert OMG KeBNF grammar specifications to parser grammars. Parses the
 full KerML + SysML v2 KeBNF specs (640 rules) and emits target-specific
