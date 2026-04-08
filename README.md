@@ -8,15 +8,15 @@
 [![crates.io](https://img.shields.io/crates/v/kebnf.svg)](https://crates.io/crates/kebnf)
 
 Convert OMG KeBNF grammar specifications to parser grammars. Parses the
-full KerML + SysML v2 KeBNF specs (640 rules) and emits target-specific
-output with semantic traceability.
+full KerML + SysML v2 KeBNF specs and emits target-specific output with
+semantic traceability.
 
 ## Output Formats
 
 | Format | Flag | Output | Status |
 |--------|------|--------|--------|
-| **ANTLR4** | `--format antlr4` | `.g4` | **CI-validated** -- compiles with antlr4 4.13.2, javac 21 |
-| **tree-sitter** | `--format tree-sitter` | `grammar.js` | **CI-validated** -- 96.9% corpus coverage (186/192), 0.15ms parse speed. 11 categories at 100%. |
+| **ANTLR4** | `--format antlr4` | `.g4` | **CI-validated** -- compiles with antlr4, javac |
+| **tree-sitter** | `--format tree-sitter` | `grammar.js` | **CI-validated** -- tested against [tree-sitter-sysml](https://gitlab.com/nomograph/tree-sitter-sysml) corpus |
 
 ## Quick Start
 
@@ -46,7 +46,7 @@ Or browse: [latest pipeline artifacts](https://gitlab.com/nomograph/kebnf/-/pipe
 Every push runs a five-stage validation:
 
 1. **rust-build** -- zero compiler warnings
-2. **rust-test** -- 30 tests pass
+2. **rust-test** -- all tests pass
 3. **rust-clippy** -- zero lint warnings
 4. **antlr4-validate** -- generate .g4 from full KerML+SysML, compile with
    `antlr4 4.13.2` (zero errors), compile generated Java with `javac 21`
@@ -60,8 +60,8 @@ usage rule has its prefix keywords inlined for early disambiguation.
 This eliminates the shared-prefix ambiguity that causes GLR timeout in
 naive conversion approaches.
 
-**Corpus coverage: 96.9%** (186/192 test snippets from
-[tree-sitter-sysml](https://gitlab.com/nomograph/tree-sitter-sysml))
+Corpus coverage tested against
+[tree-sitter-sysml](https://gitlab.com/nomograph/tree-sitter-sysml) test snippets:
 
 | Category | Coverage |
 |----------|----------|
@@ -71,9 +71,7 @@ naive conversion approaches.
 | Packages | 89% |
 | Connections | 80% |
 
-Parse speed: 0.15ms for typical files (4000+ bytes/ms).
-
-### Known Limitations (6 remaining failures)
+### Known Limitations
 
 The following constructs are not yet supported. They require structural
 changes to the usage pattern that cause tree-sitter's LR table generation
@@ -140,7 +138,7 @@ KeBNF source (.kebnf)
   Statistics (--stats)
 ```
 
-The parser handles all 640 KerML + SysML v2 rules. Each emitter walks the
+The parser handles all KerML + SysML v2 rules. Each emitter walks the
 same AST. The ANTLR4 emitter handles:
 
 - Lexer/parser rule split (ALL_CAPS -> lexer, CamelCase -> parser)
