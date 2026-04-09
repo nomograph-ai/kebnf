@@ -10,7 +10,7 @@ authors = ["Andrew Dunn <andunn@gitlab.com>"]
 keywords = ["sysml", "kebnf", "grammar", "parser", "antlr4"]
 categories = ["development-tools", "parsing"]
 readme = "README.md"
-exclude = ["tests/", "scripts/", "prompts/", "docs/"]
+exclude = ["tests/", "scripts/", "prompts/", "docs/", "*.png", "*.svg"]
 
 [[bin]]
 name = "kebnf"
