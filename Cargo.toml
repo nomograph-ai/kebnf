@@ -12,6 +12,10 @@ categories = ["development-tools", "parsing"]
 readme = "README.md"
 exclude = ["tests/", "scripts/", "prompts/", "docs/"]
 
+[[bin]]
+name = "kebnf"
+path = "src/main.rs"
+
 [dependencies]
 ariadne = "0.4"
 chumsky = "1.0.0-alpha.7"
