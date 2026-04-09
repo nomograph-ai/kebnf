@@ -1,12 +1,12 @@
 include:
   - template: Jobs/Secret-Detection.gitlab-ci.yml
-  - component: gitlab.com/nomograph/pipeline/rust-cli@v2.4.5
+  - component: gitlab.com/nomograph/pipeline/rust-cli@v2.4.6
     inputs:
       binary_name: kebnf
       project_description: "Convert OMG KeBNF grammars to ANTLR4 and tree-sitter."
       audit_allow_failure: false
       crates_publish: true
-  - component: gitlab.com/nomograph/pipeline/grammar-validate@v2.4.5
+  - component: gitlab.com/nomograph/pipeline/grammar-validate@v2.4.6
     inputs:
       binary_name: kebnf
 
