@@ -1,66 +1,34 @@
-stages:
-  - test
-  - validate
-  - publish
+include:
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+  - component: gitlab.com/nomograph/pipeline/rust-cli@v2.3.0
+    inputs:
+      binary_name: kebnf
+      project_description: "Convert OMG KeBNF grammars to ANTLR4 and tree-sitter."
+      audit_allow_failure: false
+      crates_publish: true
+
+stages: [test, build, validate, sign, publish, release]
 
 default:
-  image: rust:1.94
-  tags:
-    - storr
+  tags: [storr]
+  interruptible: true
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+variables:
+  CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
 
 # ============================================================================
-# Test Stage — Rust build, clippy, tests
-# ============================================================================
-
-rust-build:
-  stage: test
-  cache:
-    key: rust-${CI_COMMIT_REF_SLUG}
-    paths:
-      - target/
-  script:
-    - cargo build --release 2>&1 | tee build-output.txt
-    - "! grep -q 'warning:.*kebnf' build-output.txt"
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
-
-rust-test:
-  stage: test
-  cache:
-    key: rust-${CI_COMMIT_REF_SLUG}
-    paths:
-      - target/
-  script:
-    - cargo test --all-features
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
-
-rust-clippy:
-  stage: test
-  cache:
-    key: rust-${CI_COMMIT_REF_SLUG}
-    paths:
-      - target/
-  script:
-    - rustup component add clippy
-    - cargo clippy -- -D warnings
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
-
-# ============================================================================
-# Validate Stage — ANTLR4 grammar compilation
+# Validate Stage -- domain-specific grammar validation
 # ============================================================================
 
 tree-sitter-validate:
   stage: validate
   image: rust:1.94
-  needs: ["rust-build"]
+  needs: ["check"]
   cache:
     key: ts-cli-${CI_COMMIT_REF_SLUG}
     paths:
@@ -81,7 +49,7 @@ tree-sitter-validate:
     - echo '{"name":"ts-validate","version":"0.0.1"}' > package.json
     - tree-sitter generate
     - test -f src/parser.c
-    - echo "tree-sitter generate passed — $(wc -l < src/parser.c) lines"
+    - echo "tree-sitter generate passed"
   artifacts:
     paths:
       - grammar.js
@@ -95,32 +63,23 @@ tree-sitter-validate:
 antlr4-validate:
   stage: validate
   image: eclipse-temurin:21-jdk
-  needs: ["rust-build"]
+  needs: ["check"]
   before_script:
-    # Install Rust in the Java image
     - apt-get update -qq && apt-get install -y -qq curl build-essential pkg-config libssl-dev > /dev/null
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.94.0
     - source "$HOME/.cargo/env"
-    # Download ANTLR4
     - curl -sLO https://www.antlr.org/download/antlr-4.13.2-complete.jar
   script:
-    # Build kebnf
     - cargo build --release
-    # Generate ANTLR4 grammar from KerML + SysML specs
     - >-
       ./target/release/kebnf
       tests/kebnf/KerML-textual-bnf.kebnf
       tests/kebnf/SysML-textual-bnf.kebnf
       --format antlr4 -o Sysml.g4 --stats
-    # Validate with ANTLR4 — must produce zero errors
     - java -jar antlr-4.13.2-complete.jar Sysml.g4 2>&1 | tee antlr4-output.txt
     - "! grep -q '^error' antlr4-output.txt"
-    # Compile generated Java parser — must succeed
     - javac -cp antlr-4.13.2-complete.jar Sysml*.java
-    - echo "ANTLR4 validation passed — $(ls Sysml*.class | wc -l) class files generated"
-    # Parse a minimal SysML file to verify the grammar works end-to-end.
-    # Exercises: packages, part defs, typing (symbol alias), REGULAR_COMMENT,
-    # doc keyword, comment-about clause, specialization.
+    - echo "ANTLR4 validation passed"
     - |
       cat > test_input.sysml <<'SYSML'
       package TestPackage {
@@ -146,18 +105,4 @@ antlr4-validate:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
-
-
-# ============================================================================
-# Publish Stage -- tag-triggered
-# ============================================================================
-
-publish-crates:
-  stage: publish
-  image: rust:1.94
-  needs: ["rust-build", "rust-test", "rust-clippy", "antlr4-validate", "tree-sitter-validate"]
-  script:
-    - cargo publish --no-verify --allow-dirty
-  rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
