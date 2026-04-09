@@ -5,7 +5,7 @@
 [![pipeline](https://gitlab.com/nomograph/kebnf/badges/main/pipeline.svg)](https://gitlab.com/nomograph/kebnf/-/pipelines)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![built with GitLab](https://img.shields.io/badge/built_with-GitLab-FC6D26?logo=gitlab)](https://gitlab.com/nomograph/kebnf)
-[![crates.io](https://img.shields.io/crates/v/kebnf.svg)](https://crates.io/crates/kebnf)
+[![crates.io](https://img.shields.io/crates/v/nomograph-kebnf.svg)](https://crates.io/crates/nomograph-kebnf)
 
 Convert OMG KeBNF grammar specifications to parser grammars. Parses the
 full KerML + SysML v2 KeBNF specs and emits target-specific output with
@@ -22,7 +22,7 @@ semantic traceability.
 
 ```bash
 # Install from crates.io
-cargo install kebnf
+cargo install nomograph-kebnf
 
 # Convert SysML v2 KeBNF to ANTLR4 grammar
 kebnf KerML.kebnf SysML.kebnf --format antlr4 -o Sysml.g4

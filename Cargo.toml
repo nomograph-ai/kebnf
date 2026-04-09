@@ -1,12 +1,12 @@
 [package]
-name = "kebnf"
+name = "nomograph-kebnf"
 version = "0.2.1"
 edition = "2024"
 description = "Convert OMG KeBNF grammars to ANTLR4 and tree-sitter -- parses all 640 KerML + SysML v2 rules"
 license = "MIT"
 repository = "https://gitlab.com/nomograph/kebnf"
 homepage = "https://nomograph.ai"
-authors = ["Andrew Dunn <andrew@nomograph.ai>"]
+authors = ["Andrew Dunn <andunn@gitlab.com>"]
 keywords = ["sysml", "kebnf", "grammar", "parser", "antlr4"]
 categories = ["development-tools", "parsing"]
 readme = "README.md"

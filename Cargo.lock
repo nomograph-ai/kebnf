@@ -749,22 +749,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kebnf"
-version = "0.2.1"
-dependencies = [
- "ariadne",
- "chumsky",
- "clap",
- "directories",
- "insta",
- "pretty_assertions",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -842,6 +826,22 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "nomograph-kebnf"
+version = "0.2.1"
+dependencies = [
+ "ariadne",
+ "chumsky",
+ "clap",
+ "directories",
+ "insta",
+ "pretty_assertions",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
