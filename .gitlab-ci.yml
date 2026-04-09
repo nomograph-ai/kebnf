@@ -6,6 +6,9 @@ include:
       project_description: "Convert OMG KeBNF grammars to ANTLR4 and tree-sitter."
       audit_allow_failure: false
       crates_publish: true
+  - component: gitlab.com/nomograph/pipeline/grammar-validate@v2.3.0
+    inputs:
+      binary_name: kebnf
 
 stages: [test, build, validate, sign, publish, release]
 
@@ -20,89 +23,3 @@ default:
 
 variables:
   CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
-
-# ============================================================================
-# Validate Stage -- domain-specific grammar validation
-# ============================================================================
-
-tree-sitter-validate:
-  stage: validate
-  image: rust:1.94
-  needs: ["check"]
-  cache:
-    key: ts-cli-${CI_COMMIT_REF_SLUG}
-    paths:
-      - target/
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq nodejs libclang-dev > /dev/null
-    - cargo install tree-sitter-cli --locked
-    - export PATH="$HOME/.cargo/bin:$PATH"
-  script:
-    - export PATH="$HOME/.cargo/bin:$PATH"
-    - cargo build --release
-    - >-
-      ./target/release/kebnf
-      tests/kebnf/KerML-textual-bnf.kebnf
-      tests/kebnf/SysML-textual-bnf.kebnf
-      --format tree-sitter -o grammar.js
-    - echo '{"metadata":{"version":"0.0.1","links":{}},"grammars":[{"name":"sysml","path":"."}]}' > tree-sitter.json
-    - echo '{"name":"ts-validate","version":"0.0.1"}' > package.json
-    - tree-sitter generate
-    - test -f src/parser.c
-    - echo "tree-sitter generate passed"
-  artifacts:
-    paths:
-      - grammar.js
-    expire_in: 30 days
-    when: always
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
-
-antlr4-validate:
-  stage: validate
-  image: eclipse-temurin:21-jdk
-  needs: ["check"]
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq curl build-essential pkg-config libssl-dev > /dev/null
-    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.94.0
-    - source "$HOME/.cargo/env"
-    - curl -sLO https://www.antlr.org/download/antlr-4.13.2-complete.jar
-  script:
-    - cargo build --release
-    - >-
-      ./target/release/kebnf
-      tests/kebnf/KerML-textual-bnf.kebnf
-      tests/kebnf/SysML-textual-bnf.kebnf
-      --format antlr4 -o Sysml.g4 --stats
-    - java -jar antlr-4.13.2-complete.jar Sysml.g4 2>&1 | tee antlr4-output.txt
-    - "! grep -q '^error' antlr4-output.txt"
-    - javac -cp antlr-4.13.2-complete.jar Sysml*.java
-    - echo "ANTLR4 validation passed"
-    - |
-      cat > test_input.sysml <<'SYSML'
-      package TestPackage {
-          part def Vehicle {
-              attribute mass : ScalarValues::Real;
-          }
-          part def Truck :> Vehicle;
-          part myVehicle : Vehicle;
-          comment about Vehicle /* A structured comment body */
-          doc /* Package-level documentation */
-      }
-      SYSML
-    - java -cp ".:antlr-4.13.2-complete.jar" org.antlr.v4.gui.TestRig Sysml rootNamespace test_input.sysml > parse-output.txt 2>&1 || { cat parse-output.txt; echo "TestRig failed"; exit 1; }
-    - "! grep -qi 'mismatched input\\|no viable alternative\\|extraneous input\\|missing\\|Exception' parse-output.txt"
-    - echo "ANTLR4 parse test passed"
-  artifacts:
-    paths:
-      - Sysml.g4
-      - antlr4-output.txt
-      - parse-output.txt
-    expire_in: 30 days
-    when: always
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
