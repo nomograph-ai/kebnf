@@ -4,7 +4,7 @@
 
 [![pipeline](https://gitlab.com/nomograph/kebnf/badges/main/pipeline.svg)](https://gitlab.com/nomograph/kebnf/-/pipelines)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-![built with GitLab](https://img.shields.io/badge/built_with-GitLab-FC6D26?logo=gitlab)
+[![built with GitLab](https://img.shields.io/badge/built_with-GitLab-FC6D26?logo=gitlab)](https://gitlab.com/nomograph/kebnf)
 [![crates.io](https://img.shields.io/crates/v/kebnf.svg)](https://crates.io/crates/kebnf)
 
 Convert OMG KeBNF grammar specifications to parser grammars. Parses the
@@ -21,15 +21,22 @@ semantic traceability.
 ## Quick Start
 
 ```bash
-# Build from source
-cargo build --release
+# Install from crates.io
+cargo install kebnf
 
 # Convert SysML v2 KeBNF to ANTLR4 grammar
-./target/release/kebnf KerML.kebnf SysML.kebnf --format antlr4 -o Sysml.g4
+kebnf KerML.kebnf SysML.kebnf --format antlr4 -o Sysml.g4
 
 # Fetch the latest specs from the OMG GitHub repo, then convert
-./target/release/kebnf --fetch-spec
-./target/release/kebnf ~/.cache/kebnf/*.kebnf --format antlr4 -o Sysml.g4
+kebnf --fetch-spec
+kebnf ~/.cache/kebnf/*.kebnf --format antlr4 -o Sysml.g4
+```
+
+To build from source instead:
+
+```bash
+cargo build --release
+./target/release/kebnf --help
 ```
 
 ## Getting the .g4 File
