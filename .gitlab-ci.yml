@@ -1,25 +1,15 @@
+# gitlab.com/nomograph/kebnf .gitlab-ci.yml
+#
+# Pipeline structure provided by nomograph/pipeline grammar-rust@v4.1.6
+# (gates + Rust CLI bundle + grammar-validate stage with tree-sitter
+# generation check and ANTLR4 compile + parse check).
+
 include:
   - template: Jobs/Secret-Detection.gitlab-ci.yml
-  - component: gitlab.com/nomograph/pipeline/rust-cli@v2.4.6
+  - component: gitlab.com/nomograph/pipeline/grammar-rust@v4.1.6
     inputs:
       binary_name: kebnf
       project_description: "Convert OMG KeBNF grammars to ANTLR4 and tree-sitter."
-      audit_allow_failure: false
       crates_publish: true
-  - component: gitlab.com/nomograph/pipeline/grammar-validate@v2.4.6
-    inputs:
-      binary_name: kebnf
-
-stages: [test, build, validate, sign, publish, release]
-
-default:
-  tags: [storr]
-  interruptible: true
-  retry:
-    max: 2
-    when:
-      - runner_system_failure
-      - stuck_or_timeout_failure
-
-variables:
-  CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
+      in_kit_registry: false
+      kebnf_inputs: "tests/kebnf/KerML-textual-bnf.kebnf tests/kebnf/SysML-textual-bnf.kebnf"
