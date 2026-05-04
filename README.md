@@ -198,4 +198,4 @@ MIT
 - [SysML v2 Release](https://github.com/Systems-Modeling/SysML-v2-Release) -- OMG KeBNF source files
 
 ---
-Built by Andrew Dunn, April 2026.
+Part of [Nomograph Labs](https://nomograph.ai).
