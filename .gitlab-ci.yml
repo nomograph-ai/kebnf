@@ -4,6 +4,9 @@
 # (gates + Rust CLI bundle + grammar-validate stage with tree-sitter
 # generation check and ANTLR4 compile + parse check).
 
+default:
+  tags: [storr]
+
 include:
   - template: Jobs/Secret-Detection.gitlab-ci.yml
   - component: gitlab.com/nomograph/pipeline/grammar-rust@v4.1.6
