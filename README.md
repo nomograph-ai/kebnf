@@ -18,7 +18,7 @@ semantic traceability.
 | **ANTLR4** | `--format antlr4` | `.g4` | **CI-validated** -- compiles with antlr4, javac |
 | **tree-sitter** | `--format tree-sitter` | `grammar.js` | **CI-validated** -- tested against [tree-sitter-sysml](https://gitlab.com/nomograph/tree-sitter-sysml) corpus |
 
-## Quick Start
+## Quickstart
 
 ```bash
 # Install from crates.io
@@ -198,4 +198,4 @@ MIT
 - [SysML v2 Release](https://github.com/Systems-Modeling/SysML-v2-Release) -- OMG KeBNF source files
 
 ---
-Built by Andrew Dunn, April 2026.
+Part of [Nomograph Labs](https://nomograph.ai).
