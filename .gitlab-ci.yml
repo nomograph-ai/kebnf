@@ -9,7 +9,7 @@ default:
 
 include:
   - template: Jobs/Secret-Detection.gitlab-ci.yml
-  - component: gitlab.com/nomograph/pipeline/grammar-rust@v4.1.8
+  - component: gitlab.com/nomograph/pipeline/grammar-rust@v4.4.2
     inputs:
       binary_name: kebnf
       project_description: "Convert OMG KeBNF grammars to ANTLR4 and tree-sitter."
