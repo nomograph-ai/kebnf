@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `--closure` flag: transitively extends `--include` so the emitted
+  tree-sitter grammar has no dangling `$.x` references. Implemented as an
+  iterative fixed point (emit, scan emitted text for dangling references,
+  reverse-map them to KeBNF rule names, extend the include set, re-emit)
+  because the tree-sitter emitter is non-compositional -- a single static
+  reachability pass over the full grammar's reference graph is not
+  sufficient to predict what a smaller rule subset will emit. Only
+  implemented for `--format tree-sitter`; a no-op warning is printed if
+  passed with `--format antlr4` or with an empty `--include`. Fails with a
+  clear error (listing the remaining dangling references) if the fixed
+  point doesn't converge within 20 iterations, or gets stuck because a
+  dangling reference has no corresponding KeBNF rule at all.
+- Warning printed to stderr whenever a `--format tree-sitter` emission
+  (with or without `--closure`) has dangling `$.x` references with no
+  defining rule; previously these were emitted silently.
+- `ambiguity_resolutions.merged_rules` in `mapping.json` now reports the
+  expression-chain rules the tree-sitter emitter inlines into
+  `owned_expression` and `primary_expression` instead of emitting as their
+  own rule (was always an empty array).
+
+### Fixed
+- `mapping.json`'s `tree_sitter_name` field for ALL-CAPS lexical terminals
+  (e.g. `NAME`, `BASIC_NAME`, `UNRESTRICTED_NAME`, `WHITE_SPACE`,
+  `CONJUGATES`, `SPECIALIZES`) no longer disagrees with what the
+  tree-sitter emitter actually writes. `mapping.rs` had its own copy of
+  `to_snake_case` that mangled all-caps names per letter (e.g. `NAME` ->
+  `n_a_m_e`); it now shares the corrected implementation (already used by
+  the tree-sitter emitter) via a new `src/naming.rs` module.
+
 ## 0.2.1 (2026-03-31)
 
 ### Fixed
