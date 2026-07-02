@@ -298,6 +298,32 @@ fn chrono_lite_now() -> String {
     format!("{}", duration.as_secs())
 }
 
+/// KeBNF rules the tree-sitter emitter redirects into `owned_expression`
+/// (see `build_inline_map`'s "Expression redirects" table in
+/// `emitters/tree_sitter.rs`). Kept in sync by hand, consistent with the
+/// other tree-sitter-specific rule-name tables already hardcoded in this
+/// file (e.g. the `additional` conflicts table above).
+const EXPRESSION_MERGES_INTO_OWNED_EXPRESSION: &[&str] = &[
+    "BinaryOperatorExpression",
+    "ConditionalBinaryOperatorExpression",
+    "ClassificationExpression",
+    "UnaryOperatorExpression",
+    "ExtentExpression",
+    "ConditionalExpression",
+];
+
+/// KeBNF rules the tree-sitter emitter redirects into `primary_expression`.
+const EXPRESSION_MERGES_INTO_PRIMARY_EXPRESSION: &[&str] = &[
+    "NonFeatureChainPrimaryExpression",
+    "BracketExpression",
+    "IndexExpression",
+    "SelectExpression",
+    "CollectExpression",
+    "FunctionOperationExpression",
+    "FeatureChainExpression",
+    "SequenceExpression",
+];
+
 fn generate_ambiguity_resolutions(rules: &[Rule]) -> AmbiguityResolutions {
     let mut resolutions = AmbiguityResolutions::default();
     let rule_names: std::collections::HashSet<_> = rules.iter().map(|r| r.name.as_str()).collect();
@@ -421,6 +447,36 @@ fn generate_ambiguity_resolutions(rules: &[Rule]) -> AmbiguityResolutions {
         }
     }
 
+    // Mirrors tree_sitter.rs's build_inline_map "Expression redirects" table:
+    // these KeBNF rules are never emitted as their own tree-sitter rule --
+    // the emitter inlines them into a shared target to avoid GLR-ambiguous
+    // separate rules for what is really one precedence chain.
+    for (group, resulting_rule, rationale) in [
+        (
+            EXPRESSION_MERGES_INTO_OWNED_EXPRESSION,
+            "owned_expression",
+            "tree-sitter emitter inlines this into the owned_expression precedence chain to avoid a separate GLR-ambiguous rule",
+        ),
+        (
+            EXPRESSION_MERGES_INTO_PRIMARY_EXPRESSION,
+            "primary_expression",
+            "tree-sitter emitter inlines this into the primary_expression redirect chain to avoid a separate GLR-ambiguous rule",
+        ),
+    ] {
+        let present: Vec<String> = group
+            .iter()
+            .filter(|name| rule_names.contains(*name))
+            .map(|name| name.to_string())
+            .collect();
+        if !present.is_empty() {
+            resolutions.merged_rules.push(MergedRule {
+                merged_rules: present,
+                resulting_rule: resulting_rule.to_string(),
+                rationale: rationale.to_string(),
+            });
+        }
+    }
+
     resolutions
 }
 
@@ -462,4 +518,54 @@ mod tests {
         );
     }
 
+    #[test]
+    fn merged_rules_reports_owned_expression_group_when_present() {
+        let rules = vec![rule("BinaryOperatorExpression"), rule("OwnedExpression")];
+        let resolutions = generate_ambiguity_resolutions(&rules);
+        assert_eq!(resolutions.merged_rules.len(), 1);
+        let merged = &resolutions.merged_rules[0];
+        assert_eq!(merged.merged_rules, vec!["BinaryOperatorExpression"]);
+        assert_eq!(merged.resulting_rule, "owned_expression");
+    }
+
+    #[test]
+    fn merged_rules_reports_both_groups_when_all_names_present() {
+        let mut rules: Vec<Rule> = EXPRESSION_MERGES_INTO_OWNED_EXPRESSION
+            .iter()
+            .chain(EXPRESSION_MERGES_INTO_PRIMARY_EXPRESSION.iter())
+            .map(|name| rule(name))
+            .collect();
+        rules.push(rule("OwnedExpression"));
+        rules.push(rule("PrimaryExpression"));
+
+        let resolutions = generate_ambiguity_resolutions(&rules);
+        assert_eq!(resolutions.merged_rules.len(), 2);
+
+        let owned = resolutions
+            .merged_rules
+            .iter()
+            .find(|m| m.resulting_rule == "owned_expression")
+            .expect("owned_expression merge group present");
+        assert_eq!(
+            owned.merged_rules,
+            EXPRESSION_MERGES_INTO_OWNED_EXPRESSION.to_vec()
+        );
+
+        let primary = resolutions
+            .merged_rules
+            .iter()
+            .find(|m| m.resulting_rule == "primary_expression")
+            .expect("primary_expression merge group present");
+        assert_eq!(
+            primary.merged_rules,
+            EXPRESSION_MERGES_INTO_PRIMARY_EXPRESSION.to_vec()
+        );
+    }
+
+    #[test]
+    fn merged_rules_empty_when_no_expression_redirect_rules_present() {
+        let rules = vec![rule("PartUsage")];
+        let resolutions = generate_ambiguity_resolutions(&rules);
+        assert!(resolutions.merged_rules.is_empty());
+    }
 }
