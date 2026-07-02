@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::naming::to_snake_case;
 use std::collections::{HashMap, HashSet};
 
 pub fn emit(rules: &[Rule], grammar_name: &str) -> Result<String, EmitError> {
@@ -1161,24 +1162,6 @@ impl Emitter {
 
 // --- Helpers ---
 
-fn to_snake_case(name: &str) -> String {
-    if name.chars().all(|c| c.is_uppercase() || c == '_') {
-        return name.to_lowercase();
-    }
-    let mut result = String::new();
-    for (i, c) in name.chars().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 {
-                result.push('_');
-            }
-            result.push(c.to_ascii_lowercase());
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-
 fn escape_terminal(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
@@ -1234,12 +1217,6 @@ fn is_skip_lexical(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_snake_case() {
-        assert_eq!(to_snake_case("FooBar"), "foo_bar");
-        assert_eq!(to_snake_case("FOO"), "foo");
-    }
 
     #[test]
     fn test_body_is_epsilon() {

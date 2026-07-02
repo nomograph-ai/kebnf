@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::naming::to_snake_case;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -289,21 +290,6 @@ fn collect_annotations_recursive(body: &RuleBody, annotations: &mut Vec<Stripped
     }
 }
 
-fn to_snake_case(name: &str) -> String {
-    let mut result = String::new();
-    for (i, c) in name.chars().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 {
-                result.push('_');
-            }
-            result.push(c.to_ascii_lowercase());
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-
 fn chrono_lite_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let duration = SystemTime::now()
@@ -436,4 +422,44 @@ fn generate_ambiguity_resolutions(rules: &[Rule]) -> AmbiguityResolutions {
     }
 
     resolutions
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rule(name: &str) -> Rule {
+        Rule {
+            name: name.to_string(),
+            produces_type: None,
+            body: RuleBody::Empty,
+            span: 0..0,
+            source_line: 0,
+        }
+    }
+
+    #[test]
+    fn to_snake_case_matches_tree_sitter_emitter_for_all_caps_terminals() {
+        // mapping.json's tree_sitter_name must agree with what the
+        // tree-sitter emitter actually writes for lexical terminals.
+        assert_eq!(to_snake_case("NAME"), "name");
+        assert_eq!(to_snake_case("BASIC_NAME"), "basic_name");
+        assert_eq!(to_snake_case("UNRESTRICTED_NAME"), "unrestricted_name");
+        assert_eq!(to_snake_case("WHITE_SPACE"), "white_space");
+        assert_eq!(to_snake_case("CONJUGATES"), "conjugates");
+        assert_eq!(to_snake_case("SPECIALIZES"), "specializes");
+    }
+
+    #[test]
+    fn generate_reports_terminal_mapping_without_mangling() {
+        let rules = vec![rule("NAME"), rule("BASIC_NAME")];
+        let json = generate(&rules).expect("generate should succeed");
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["rules"]["NAME"]["tree_sitter_name"], "name");
+        assert_eq!(
+            value["rules"]["BASIC_NAME"]["tree_sitter_name"],
+            "basic_name"
+        );
+    }
+
 }
