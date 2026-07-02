@@ -181,6 +181,8 @@ Options:
   -m, --mapping <PATH> Output mapping.json
   --include <PATTERNS> Include rules matching patterns (comma-separated)
   --exclude <PATTERNS> Exclude rules matching patterns
+  --closure           Transitively extend --include so the emitted grammar
+                       has no dangling $.x references (tree-sitter only)
   --stats             Print conversion statistics
   --validate          Validate output with tree-sitter generate
   --fetch-spec        Download latest KeBNF specs from OMG GitHub

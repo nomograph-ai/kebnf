@@ -3,9 +3,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 mod ast;
+mod closure;
 mod emitters;
 mod fetch;
 mod mapping;
+mod naming;
 mod parser;
 
 #[derive(ClapParser, Debug)]
@@ -40,6 +42,12 @@ struct Cli {
     /// Exclude rules matching these patterns (comma-separated)
     #[arg(long, value_delimiter = ',')]
     exclude: Vec<String>,
+
+    /// Transitively extend --include so the emitted grammar has no
+    /// dangling $.x references. Only meaningful with a non-empty --include;
+    /// only implemented for --format tree-sitter.
+    #[arg(long)]
+    closure: bool,
 
     /// Validate output with tree-sitter generate
     #[arg(long)]
@@ -129,13 +137,55 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Parsed {} rules", all_rules.len());
     }
 
-    let filtered_rules = filter_rules(all_rules, &cli.include, &cli.exclude);
+    if cli.closure && cli.include.is_empty() {
+        eprintln!(
+            "Warning: --closure has no effect with an empty --include (include-all already includes everything); proceeding without closure"
+        );
+    }
+    if cli.closure && !cli.include.is_empty() && format != emitters::OutputFormat::TreeSitter {
+        eprintln!(
+            "Warning: --closure is only implemented for --format tree-sitter; proceeding without closing"
+        );
+    }
+
+    let want_closure =
+        cli.closure && !cli.include.is_empty() && format == emitters::OutputFormat::TreeSitter;
+
+    let (filtered_rules, output_content) = if want_closure {
+        let result = closure::close_includes(
+            &all_rules,
+            &cli.include,
+            &cli.exclude,
+            &cli.name,
+            cli.verbose,
+        )?;
+        eprintln!(
+            "closure: converged after {} iteration(s), {} kebnf rule(s) included",
+            result.iterations,
+            result.include.len()
+        );
+        (result.rules, result.output)
+    } else {
+        let filtered = filter_rules(&all_rules, &cli.include, &cli.exclude);
+        let content = emitters::emit(&filtered, &cli.name, format)?;
+        if format == emitters::OutputFormat::TreeSitter {
+            let dangling = closure::find_dangling(&content);
+            if !dangling.is_empty() {
+                let names: Vec<_> = dangling.into_iter().collect();
+                eprintln!(
+                    "Warning: emitted grammar has {} dangling $.x reference(s) with no defining rule: {}. Re-run with --closure (and a non-empty --include) to transitively pull in the missing rules.",
+                    names.len(),
+                    names.join(", ")
+                );
+            }
+        }
+        (filtered, content)
+    };
 
     if cli.verbose {
         eprintln!("After filtering: {} rules", filtered_rules.len());
     }
 
-    let output_content = emitters::emit(&filtered_rules, &cli.name, format)?;
     std::fs::write(&output_path, &output_content)?;
 
     if cli.verbose {
@@ -170,15 +220,20 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn filter_rules(rules: Vec<ast::Rule>, include: &[String], exclude: &[String]) -> Vec<ast::Rule> {
+pub(crate) fn filter_rules(
+    rules: &[ast::Rule],
+    include: &[String],
+    exclude: &[String],
+) -> Vec<ast::Rule> {
     rules
-        .into_iter()
+        .iter()
         .filter(|rule| {
             let name = &rule.name;
             let included = include.is_empty() || include.iter().any(|p| matches_pattern(name, p));
             let excluded = exclude.iter().any(|p| matches_pattern(name, p));
             included && !excluded
         })
+        .cloned()
         .collect()
 }
 
