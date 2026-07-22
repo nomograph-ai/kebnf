@@ -9,7 +9,7 @@ default:
 
 include:
   - template: Jobs/Secret-Detection.gitlab-ci.yml
-  - component: gitlab.com/nomograph/pipeline/grammar-rust@v5.3.1
+  - component: gitlab.com/nomograph/pipeline/grammar-rust@v5.5.0
     inputs:
       binary_name: kebnf
       project_description: "Convert OMG KeBNF grammars to ANTLR4 and tree-sitter."
@@ -21,13 +21,13 @@ include:
   # (builds+tests the crate), automerge-gate blocks unless every
   # required check is PRESENT and ==pass. The gate job's green/red is
   # the pipeline status Renovate reads before GitLab native auto-merge.
-  - component: gitlab.com/nomograph/pipeline/osv-verdict@v5.3.1
+  - component: gitlab.com/nomograph/pipeline/osv-verdict@v5.5.0
     inputs:
       stage: verdict
-  - component: gitlab.com/nomograph/pipeline/cargo-verdict@v5.3.1
+  - component: gitlab.com/nomograph/pipeline/cargo-verdict@v5.5.0
     inputs:
       stage: verdict
-  - component: gitlab.com/nomograph/pipeline/automerge-gate@v5.3.1
+  - component: gitlab.com/nomograph/pipeline/automerge-gate@v5.5.0
     inputs:
       stage: gate
       required-checks: "osv,cargo"
