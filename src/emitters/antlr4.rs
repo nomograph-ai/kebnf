@@ -528,15 +528,11 @@ impl Antlr4Emitter {
 
     fn collect_refs_from_body(&mut self, body: &RuleBody) {
         match body {
-            RuleBody::RuleRef(name) => {
-                if !self.rule_names.contains(name) {
-                    self.undefined_refs.insert(name.clone());
-                }
+            RuleBody::RuleRef(name) if !self.rule_names.contains(name) => {
+                self.undefined_refs.insert(name.clone());
             }
-            RuleBody::CrossRef(cross_ref) => {
-                if !self.rule_names.contains(&cross_ref.rule_name) {
-                    self.undefined_refs.insert(cross_ref.rule_name.clone());
-                }
+            RuleBody::CrossRef(cross_ref) if !self.rule_names.contains(&cross_ref.rule_name) => {
+                self.undefined_refs.insert(cross_ref.rule_name.clone());
             }
             RuleBody::Sequence(items) | RuleBody::Choice(items) => {
                 for item in items {
