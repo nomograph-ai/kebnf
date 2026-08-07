@@ -8,7 +8,7 @@ default:
   tags: [storr]
 
 include:
-  - component: gitlab.com/nomograph/pipeline/grammar-rust@v5.12.0
+  - component: gitlab.com/nomograph/pipeline/grammar-rust@v5.13.0
     inputs:
       binary_name: kebnf
       project_description: "Convert OMG KeBNF grammars to ANTLR4 and tree-sitter."
@@ -21,10 +21,10 @@ include:
   # automerge-gate blocks unless every required check is PRESENT and
   # ==pass. The gate job's green/red is the pipeline status Renovate
   # reads before GitLab native auto-merge.
-  - component: gitlab.com/nomograph/pipeline/osv-verdict@v5.12.0
+  - component: gitlab.com/nomograph/pipeline/osv-verdict@v5.13.0
     inputs:
       stage: verdict
-  - component: gitlab.com/nomograph/pipeline/cargo-verdict@v5.12.0
+  - component: gitlab.com/nomograph/pipeline/cargo-verdict@v5.13.0
     inputs:
       stage: verdict
   # Secret detection that BLOCKS. Replaces (does not supplement)
@@ -36,13 +36,13 @@ include:
   # gl-secret-detection-report.json and exits nonzero when the
   # vulnerabilities array is non-empty. Identical scan surface, real
   # verdict; a missing report fails closed.
-  - component: gitlab.com/nomograph/pipeline/secret-verdict@v5.12.0
+  - component: gitlab.com/nomograph/pipeline/secret-verdict@v5.13.0
     inputs:
       stage: verdict
   # v5.10.0 for the secret_job needs: slot -- the v5.7.0 gate has no
   # such slot, so CHECK_SECRET would never reach it and a required
   # "secret" would fail closed forever.
-  - component: gitlab.com/nomograph/pipeline/automerge-gate@v5.12.0
+  - component: gitlab.com/nomograph/pipeline/automerge-gate@v5.13.0
     inputs:
       stage: gate
       required-checks: "osv,cargo,secret"
