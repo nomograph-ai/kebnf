@@ -5,7 +5,7 @@
 # generation check and ANTLR4 compile + parse check).
 
 default:
-  tags: [storr]
+  tags: [anvil]
 
 include:
   - component: gitlab.com/nomograph/pipeline/grammar-rust@v5.14.1
